@@ -1,0 +1,227 @@
+// Prisma schema for TARKIB.
+// Postgres is hosted on Neon. `url` is the pooled connection used at runtime;
+// `directUrl` is the non-pooled connection required by `prisma migrate`, because
+// Neon's pooler runs in transaction mode and cannot execute migration DDL/advisory locks.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                 String   @id @default(uuid())
+  clerkId            String   @unique
+  email              String   @unique
+  name               String?
+  companyName        String?
+  logoUrl            String?
+  stripeCustomerId   String?
+  subscriptionPlan   String   @default("trial") // trial | starter | pro
+  subscriptionStatus String   @default("active")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  projects      Project[]
+  materials     Material[]
+  costSettings  CostSettings?
+  quoteSettings QuoteSettings?
+}
+
+model CostSettings {
+  id             String @id @default(uuid())
+  userId         String @unique
+  user           User   @relation(fields: [userId], references: [id])
+  laborType      String @default("percent") // percent | fixed
+  laborValue     Int    @default(0)
+  transportType  String @default("manual") // percent | fixed | manual
+  transportValue Int    @default(0)
+  installType    String @default("percent")
+  installValue   Int    @default(0)
+  marginPercent  Int    @default(0)
+  taxPercent     Int    @default(0)
+  currency       String @default("MAD")
+}
+
+model QuoteSettings {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  user            User    @relation(fields: [userId], references: [id])
+  logoUrl         String?
+  primaryColorHex String?
+  footerText      String?
+  termsText       String?
+  paymentDetails  String?
+}
+
+model Project {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  title  String
+
+  // Workflow stage. "archived" is deliberately NOT a value here: archiving is
+  // orthogonal to progress, so it is tracked by archivedAt. That way restoring a
+  // project returns it to the stage it had reached rather than losing it.
+  status String @default("intake") // intake|spec_approved|calculated|quoted|production_ready
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  messages         ChatMessage[]
+  files            File[]
+  specs            ProjectSpec[]
+  versions         ProjectVersion[]
+  projectMaterials ProjectMaterial[]
+  cuttingPlans     CuttingPlan[]
+  diagrams         Diagram[]
+  mockups          Mockup[]
+  costs            ProjectCost[]
+  documents        Document[]
+
+  @@index([userId, archivedAt])
+}
+
+model ChatMessage {
+  id                String   @id @default(uuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role              String // user|assistant|system
+  content           String
+  attachmentFileIds Json?
+  createdAt         DateTime @default(now())
+}
+
+model File {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  type      String // photo|logo|sketch|reference|mockup_source|generated_diagram|generated_mockup
+  url       String
+  mimeType  String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+}
+
+model ProjectSpec {
+  id         String    @id @default(uuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version    Int
+  data       Json
+  status     String    @default("draft") // draft|approved
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model ProjectVersion {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  label         String
+  specSnapshot  Json
+  costSnapshot  Json?
+  createdAt     DateTime @default(now())
+}
+
+model Material {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  name             String
+  category         String
+  customCategory   Boolean  @default(false)
+  supplier         String?
+  standardUnitSize String
+  unit             String // meter|sqm|sheet|piece
+  thickness        String?
+  unitPriceCents   Int
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  projectMaterials ProjectMaterial[]
+  cuttingPlans     CuttingPlan[]
+}
+
+model ProjectMaterial {
+  id                     String   @id @default(uuid())
+  projectId              String
+  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  materialId             String
+  material               Material @relation(fields: [materialId], references: [id])
+  requiredQuantity       Decimal
+  requiredDimensions     String
+  unitsToPurchase        Int
+  totalPurchasedQuantity Decimal
+  wastePercent           Decimal
+  unitPriceCentsSnapshot Int
+  totalCostCents         Int
+  manualOverride         Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model CuttingPlan {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  materialId      String
+  material        Material @relation(fields: [materialId], references: [id])
+  sheetSizeLabel  String
+  layoutData      Json
+  wastePercent    Decimal
+  diagramImageUrl String
+  createdAt       DateTime @default(now())
+}
+
+model Diagram {
+  id             String   @id @default(uuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type           String   @default("front_view")
+  imageUrl       String
+  dimensionsData Json
+  createdAt      DateTime @default(now())
+}
+
+model Mockup {
+  id             String   @id @default(uuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceFileId   String?
+  resultImageUrl String
+  prompt         String
+  createdAt      DateTime @default(now())
+}
+
+model ProjectCost {
+  id                 String   @id @default(uuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  materialsCostCents Int
+  laborCostCents     Int
+  transportCostCents Int
+  installCostCents   Int
+  internalTotalCents Int
+  marginCents        Int
+  taxCents           Int
+  clientTotalCents   Int
+  computedAt         DateTime @default(now())
+}
+
+model Document {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      String // client_quote | production
+  version   Int
+  pdfUrl    String
+  createdAt DateTime @default(now())
+}
