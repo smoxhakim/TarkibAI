@@ -1,4 +1,5 @@
 import { defineConfig } from '@prisma/config';
+import { normalizeSslMode } from './src/lib/db-url';
 
 // Prisma 7 no longer reads .env automatically and no longer accepts connection
 // URLs inside schema.prisma. Node's built-in loader is used here so we don't
@@ -11,6 +12,6 @@ export default defineConfig({
     // Migrations MUST use the non-pooled Neon endpoint: the pooler runs in
     // transaction mode and cannot hold the advisory locks migrate requires.
     // Runtime traffic uses the pooled DATABASE_URL via the driver adapter in src/lib/db.ts.
-    url: process.env.DIRECT_URL as string,
+    url: normalizeSslMode(process.env.DIRECT_URL as string),
   },
 });
