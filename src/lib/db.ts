@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@/generated/prisma/client';
+import { normalizeSslMode } from './db-url';
 
 // Prisma 7 requires an explicit driver adapter. Runtime traffic uses Neon's
 // POOLED endpoint (DATABASE_URL); migrations use the direct endpoint and are
@@ -9,7 +10,9 @@ function createClient() {
   if (!connectionString) {
     throw new Error('DATABASE_URL is not set. Copy .env.example to .env and configure Neon.');
   }
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString: normalizeSslMode(connectionString) }),
+  });
 }
 
 // Next.js dev server hot-reloads modules; without a global singleton every
