@@ -83,7 +83,7 @@ A user can describe a signage project naturally in Moroccan Darija, receive clar
 
 # Phase 2 — Files and Visual References
 
-## T2 — Project File Management ✅ COMPLETE (pending live R2 verification)
+## T2 — Project File Management ✅ COMPLETE
 
 - [x] Cloudflare R2 storage layer
 - [x] Presigned uploads (browser → R2 direct)
@@ -566,7 +566,7 @@ Completed:
 
 - [x] **T0 — Repository and Application Foundation** (Phase 0)
 - [x] **T1 — Moroccan Darija AI Intake** (Phase 1)
-- [x] **T2 — Project File Management** (Phase 2) — pending live R2 verification
+- [x] **T2 — Project File Management** (Phase 2)
 
 Active milestone:
 
@@ -587,11 +587,20 @@ Next milestone:
 | Production build | passed, 15 routes |
 | Migrations | 4 applied |
 | Auth boundary | all file routes return JSON 401; download leaks no redirect target |
+| Live R2 round trip | passed against the real bucket |
+| Live vision turn | passed — model read text off an uploaded image |
 
-**Live R2 behaviour is NOT yet verified.** The `R2_*` variables were unset, so
-no real upload, signed download, or vision turn with an image has been executed.
-Everything that does not require the bucket is verified, including that
-ownership is checked before storage availability.
+**Live R2 behaviour verified** on 2026-09-05 against the real bucket:
+
+- presigned PUT, HEAD verification, server-side read, signed download and
+  delete all succeed
+- an object URL with its signature stripped is refused (HTTP 400), which is the
+  assumption the whole private-storage design rests on
+- the API token is bucket-scoped: listing an unrelated bucket in the same
+  Cloudflare account fails with AccessDenied
+- a Darija turn with an attached image returned the text visible in that image,
+  confirming R2 read, sharp re-encoding and the vision request all work
+- an attachment id from another project is silently dropped rather than honoured
 
 ### T1 verification record
 
