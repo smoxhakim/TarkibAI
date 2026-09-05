@@ -92,6 +92,7 @@ model ChatMessage {
   project           Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   role              String // user|assistant
   content           String
+  /// File ids attached to this message, as a JSON array of strings.
   attachmentFileIds Json?
 
   // Audit trail of tools the agent invoked on this turn (name + arguments).
@@ -106,15 +107,32 @@ model ChatMessage {
 }
 
 model File {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId    String
   type      String // photo|logo|sketch|reference|mockup_source|generated_diagram|generated_mockup
-  url       String
+
+  /// R2 object key. Deliberately NOT a URL: a stored URL would be a standing
+  /// grant of access to anyone who reads the row or a log line. Every read goes
+  /// through an ownership check and a short-lived signed URL (ARCHITECTURE §8, §9).
+  objectKey String @unique
+
+  /// Name the user's file had on their machine, for display only. Never used to
+  /// build the object key, which is generated server-side.
+  originalName String
+
   mimeType  String
   sizeBytes Int
+
+  /// pending until the browser's direct-to-R2 upload is confirmed and the object
+  /// verified. Only "ready" files are ever shown or sent to the model.
+  status String @default("pending") // pending|ready
+
   createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([projectId, status])
 }
 
 model ProjectSpec {

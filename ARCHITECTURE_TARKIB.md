@@ -405,12 +405,22 @@ Future:
 - projectId
 - userId
 - type
-- R2 object key
+- objectKey (R2 object key)
+- originalName (display only)
 - mimeType
 - sizeBytes
+- status (pending | ready)
 - createdAt
 
-Do not rely on a public storage URL as the security mechanism.
+Do not rely on a public storage URL as the security mechanism. The column is
+`objectKey`, never a URL: a stored URL is a standing grant of access to anyone
+who reads the row or a log line. Reads go through an ownership check and a
+short-lived signed URL.
+
+`status` exists because uploads go browser-to-R2 directly. A row is reserved as
+`pending` before any bytes exist, and only becomes `ready` once the object is
+verified in the bucket. Nothing pending is listed, downloadable, or sent to the
+model.
 
 ### ProjectSpec
 
@@ -1423,3 +1433,44 @@ model does not change if streaming is added later.
 two scripts with French and English code-switching is a demanding multilingual
 task, and the dominant failure mode to avoid is inventing a dimension the user
 never gave.
+
+### T2 — Project File Management (Phase 2)
+
+**Uploads go browser-to-R2, not through the API.** The server authorises an
+upload and returns a signed PUT URL bound to the declared content type; the
+browser sends the bytes straight to R2 and then calls a confirm endpoint. A
+phone photo of a shopfront routinely exceeds Vercel's request body limit, so
+proxying would have capped a core use case.
+
+**The declared size is not trusted.** A presigned PUT cannot enforce a length,
+so `confirmUpload` HEADs the object, records R2's actual size, and deletes
+anything over the limit rather than leaving it to accrue storage cost.
+
+**Object keys are generated server-side and never contain the filename.** A
+filename is attacker-supplied and can carry traversal or control characters. It
+is stored separately as display text. Keys follow §9 and are prefixed `dev/` or
+`prod/` so a local experiment cannot touch a real project's asset.
+
+**Ownership is checked before storage availability.** An outsider gets 404, not
+the 503 that would reveal whether storage is configured on the deployment.
+
+**SVG is rejected.** It is an XML document that can carry script; serving one
+from our own origin would be a stored-XSS vector. HEIC is accepted because that
+is what iPhone photos arrive as.
+
+**Vision context is inlined, not linked.** Images are fetched from R2 by the
+server, re-encoded with sharp to a bounded size, and sent inline. A signed URL
+would be less code but would make a private site photo fetchable by anyone
+holding it for its lifetime. Re-encoding also normalises HEIC, which the API
+does not accept, and honours EXIF rotation.
+
+**Images have a shorter memory than text.** Only attachments from the most
+recent few messages are re-sent. Vision tokens dominate cost, so a long thread
+would otherwise carry every photo forever.
+
+**Attachment ids are re-resolved server-side.** `loadReadyFiles(projectId, ids)`
+scopes every id to the project, so a file id from another project cannot be
+smuggled through a chat message into someone else's vision context.
+
+**A file that cannot be decoded is skipped, not fatal.** Losing one unreadable
+attachment is better than failing the user's whole message.

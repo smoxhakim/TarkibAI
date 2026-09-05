@@ -154,6 +154,8 @@ longer backports to the 14 line, including authorization-bypass and SSRF issues.
 | Clerk (`@clerk/nextjs`) | 7.9.1 |
 | Zod | 4.5.4 |
 | OpenAI SDK | 7.10.0 |
+| AWS SDK (S3 client for R2) | 3.1126.0 |
+| sharp | 0.35.4 |
 | Vitest | 5.0.0 |
 
 Database is PostgreSQL on **Neon**; hosting target is **Vercel**.
@@ -186,8 +188,6 @@ accumulating advisories.
 
 | Package | Added in |
 | --- | --- |
-| `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | Phase 2 — R2 file storage |
-| `sharp` | Phase 2 — image processing |
 | `inngest` | Phase 12 — background jobs for mockups |
 | `@react-pdf/renderer` | Phase 13 — client quotation PDFs |
 | `stripe` | Phase 20 — billing |
@@ -232,9 +232,13 @@ src/
       projects/[id]/messages/       # GET, POST — one Darija intake turn
       projects/[id]/spec/           # GET — structured specification
       projects/[id]/spec/approve/   # POST — user-only approval
+      projects/[id]/files/          # GET, POST (authorise upload)
+      projects/[id]/files/[fileId]/          # DELETE
+      projects/[id]/files/[fileId]/confirm/  # POST — verify the object landed
+      projects/[id]/files/[fileId]/download/ # GET — redirect to a signed URL
 
   components/             # StatusBadge, NewProjectForm, ProjectActions,
-                          # ChatPanel, SpecPanel
+                          # ChatPanel, SpecPanel, FilesPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -249,10 +253,13 @@ src/
       prompts/system.ts   # Moroccan Darija instructions
       tools/              # context-bound toolbox (no approval tool)
       eval/               # live Darija evaluation cases
+      vision.ts           # downscale + inline images for the model
     spec/                 # schema, deterministic merge, completeness, service
+    files/                # upload authorisation, confirmation, ownership
+    storage/              # R2 client, signed URLs, object-key construction
     calc/                 # (stub) Phase 4
     pdf/                  # (stub) Phase 13
-    canvas/, geometry/, mockup/, storage/   # (planned)
+    canvas/, geometry/, mockup/   # (planned)
 
 inngest/                  # (planned) Phase 12
 ```
@@ -332,12 +339,20 @@ Fill in four variables; leave the rest blank until their phase arrives.
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk → API keys (`pk_...`) |
 | `CLERK_SECRET_KEY` | Clerk → API keys (`sk_...`) |
 | `OPENAI_API_KEY` | platform.openai.com → API keys (`sk-...`) |
+| `R2_ACCOUNT_ID` | Cloudflare dashboard → R2 → account id |
+| `R2_ACCESS_KEY_ID` | Cloudflare → R2 → Manage API tokens |
+| `R2_SECRET_ACCESS_KEY` | shown once when the token is created |
+| `R2_BUCKET_NAME` | the bucket you created |
 
 `OPENAI_MODEL` is optional and defaults to `gpt-5`.
 
 Without `OPENAI_API_KEY` the application still runs: the conversation endpoint
-returns 503 and the chat panel says the assistant is not configured. Nothing
-else is affected.
+returns 503 and the chat panel says the assistant is not configured. The same
+applies to the `R2_*` variables and the file endpoints. Nothing else is
+affected, and neither gap is hidden from the user.
+
+The R2 bucket must allow `PUT` from the app's origin via CORS, because uploads
+go from the browser straight to R2.
 
 Two database URLs are required because Neon's pooler runs in transaction mode
 and cannot hold the advisory locks `prisma migrate` needs. Runtime queries use
@@ -420,7 +435,7 @@ Tracks the active development roadmap and milestone status.
 
 TARKIB is built progressively according to the roadmap in `TODO.md`.
 
-**Completed: T0 — Foundation (Phase 0), T1 — Darija AI Intake (Phase 1)**
+**Completed: T0 — Foundation, T1 — Darija AI Intake, T2 — File Management**
 
 Working end to end:
 
@@ -437,7 +452,12 @@ specification through validated tool calls, deterministic missing-field
 detection, and explicit user approval that snapshots a project version. The
 agent has no tool that can approve anything.
 
-**Next: T2 — Project File Management (Phase 2)**
+T2 adds: private file storage on Cloudflare R2 with browser-to-R2 presigned
+uploads, signed short-lived downloads, attachment management in the project
+workspace, and image context for the agent. No URL is ever persisted; every
+read is authorised first.
+
+**Next: T3 — User Material Library (Phase 3)**
 
 Not yet implemented. Materials, calculations, and document panels remain
 explicitly labelled as unbuilt. Nothing in the product returns a fabricated

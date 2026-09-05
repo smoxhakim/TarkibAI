@@ -20,6 +20,8 @@
     "test:eval": "vitest run --config vitest.eval.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1126.0",
+    "@aws-sdk/s3-request-presigner": "^3.1126.0",
     "@clerk/nextjs": "7.9.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "7.10.0",
@@ -27,6 +29,7 @@
     "openai": "^7.10.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sharp": "^0.35.4",
     "zod": "4.5.4"
   },
   "devDependencies": {

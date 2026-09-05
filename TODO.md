@@ -83,19 +83,25 @@ A user can describe a signage project naturally in Moroccan Darija, receive clar
 
 # Phase 2 — Files and Visual References
 
-## T2 — Project File Management
+## T2 — Project File Management ✅ COMPLETE (pending live R2 verification)
 
-- [ ] Cloudflare R2 storage layer
-- [ ] Presigned uploads
-- [ ] Private file access
-- [ ] Upload images
-- [ ] Upload logos
-- [ ] Upload reference images
-- [ ] Upload sketches
-- [ ] Project attachment management
-- [ ] File metadata
-- [ ] Secure signed downloads
-- [ ] AI access to relevant visual context
+- [x] Cloudflare R2 storage layer
+- [x] Presigned uploads (browser → R2 direct)
+- [x] Private file access (no URL ever stored; signed, short-lived reads)
+- [x] Upload images
+- [x] Upload logos
+- [x] Upload reference images
+- [x] Upload sketches
+- [x] Project attachment management (list, preview, download, delete)
+- [x] File metadata (original name, mime type, verified size, status)
+- [x] Secure signed downloads
+- [x] AI access to relevant visual context (downscaled, inlined, recent-message window)
+
+### Deferred out of T2 (deliberately)
+
+- [ ] PDF content extraction — stored and downloadable, but not readable by the vision model
+- [ ] Server-side image content sniffing — type is validated by declared MIME and bound into the upload signature; byte-level sniffing belongs with the validation layer in T16
+- [ ] Orphaned-object sweep for abandoned pending uploads
 
 ### Definition of done
 
@@ -560,14 +566,32 @@ Completed:
 
 - [x] **T0 — Repository and Application Foundation** (Phase 0)
 - [x] **T1 — Moroccan Darija AI Intake** (Phase 1)
+- [x] **T2 — Project File Management** (Phase 2) — pending live R2 verification
 
 Active milestone:
 
-- [ ] None. T1 is complete; T2 has not been started.
+- [ ] None. T3 has not been started.
 
 Next milestone:
 
-- [ ] **T2 — Project File Management** (Phase 2)
+- [ ] **T3 — User Material Library** (Phase 3)
+
+### T2 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 71 passed |
+| Integration tests | 27 passed against Neon |
+| Production build | passed, 15 routes |
+| Migrations | 4 applied |
+| Auth boundary | all file routes return JSON 401; download leaks no redirect target |
+
+**Live R2 behaviour is NOT yet verified.** The `R2_*` variables were unset, so
+no real upload, signed download, or vision turn with an image has been executed.
+Everything that does not require the bucket is verified, including that
+ownership is checked before storage availability.
 
 ### T1 verification record
 

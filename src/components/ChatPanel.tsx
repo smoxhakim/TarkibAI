@@ -8,22 +8,41 @@ export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachmentFileIds: string[];
   createdAt: string | Date;
+};
+
+export type AttachableFile = {
+  id: string;
+  originalName: string;
+  mimeType: string;
 };
 
 type Props = {
   projectId: string;
   initialMessages: ChatMessage[];
   aiConfigured: boolean;
+  files: AttachableFile[];
 };
 
-export function ChatPanel({ projectId, initialMessages, aiConfigured }: Props) {
+export function ChatPanel({ projectId, initialMessages, aiConfigured, files }: Props) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachedIds, setAttachedIds] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Only images are offered: PDFs are stored and downloadable but the vision
+  // model cannot read them, so offering one would imply a capability we lack.
+  const attachable = files.filter((file) => file.mimeType.startsWith('image/'));
+
+  function toggleAttachment(fileId: string) {
+    setAttachedIds((prev) =>
+      prev.includes(fileId) ? prev.filter((id) => id !== fileId) : [...prev, fileId]
+    );
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -40,6 +59,7 @@ export function ChatPanel({ projectId, initialMessages, aiConfigured }: Props) {
       id: `pending-${Date.now()}`,
       role: 'user',
       content,
+      attachmentFileIds: attachedIds,
       createdAt: new Date(),
     };
     setMessages((prev) => [...prev, optimistic]);
@@ -51,7 +71,10 @@ export function ChatPanel({ projectId, initialMessages, aiConfigured }: Props) {
       const res = await fetch(`/api/projects/${projectId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content,
+          ...(attachedIds.length > 0 ? { attachmentFileIds: attachedIds } : {}),
+        }),
       });
       const body = await res.json().catch(() => ({}));
 
@@ -67,6 +90,7 @@ export function ChatPanel({ projectId, initialMessages, aiConfigured }: Props) {
         body.userMessage,
         body.assistantMessage,
       ]);
+      setAttachedIds([]);
       // Refresh the server components so the specification panel reflects any
       // tool calls the agent made during this turn.
       router.refresh();
@@ -106,6 +130,11 @@ export function ChatPanel({ projectId, initialMessages, aiConfigured }: Props) {
                 }`}
               >
                 {message.content}
+                {message.attachmentFileIds?.length ? (
+                  <span className="mt-1 block text-xs opacity-80">
+                    {message.attachmentFileIds.length} {strings.files.attached}
+                  </span>
+                ) : null}
               </div>
             </div>
           ))
@@ -124,6 +153,32 @@ export function ChatPanel({ projectId, initialMessages, aiConfigured }: Props) {
       <div className="border-t border-line p-4">
         {aiConfigured ? (
           <>
+            {attachable.length > 0 ? (
+              <div className="mb-2">
+                <p className="text-xs text-ink-muted">{strings.files.pickForMessage}</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {attachable.map((file) => {
+                    const selected = attachedIds.includes(file.id);
+                    return (
+                      <li key={file.id}>
+                        <button
+                          type="button"
+                          onClick={() => toggleAttachment(file.id)}
+                          aria-pressed={selected}
+                          className={`max-w-[12rem] truncate rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                            selected
+                              ? 'border-accent bg-accent/10 text-accent'
+                              : 'border-line text-ink-muted hover:text-ink'
+                          }`}
+                        >
+                          {file.originalName}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
             <form onSubmit={send} className="flex gap-2">
               <label htmlFor="chat-input" className="sr-only">
                 {strings.chat.title}
