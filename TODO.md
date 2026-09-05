@@ -52,22 +52,28 @@ The roadmap may evolve as product validation reveals better priorities, but majo
 
 # Phase 1 — Conversational AI
 
-## T1 — Moroccan Darija AI Intake
+## T1 — Moroccan Darija AI Intake ✅ COMPLETE
 
-- [ ] ChatMessage model
-- [ ] ProjectSpec model
-- [ ] AI conversation service
-- [ ] OpenAI integration
-- [ ] Agent/tool architecture foundation
-- [ ] Moroccan Darija system instructions
-- [ ] Darija/French code-switching support
-- [ ] Structured spec extraction
-- [ ] Missing-information detection
-- [ ] Clarification questions
-- [ ] Conversation context management
-- [ ] Chat UI
-- [ ] User approval flow
-- [ ] ProjectVersion snapshot on approval
+- [x] ChatMessage model (+ toolCalls audit trail, index)
+- [x] ProjectSpec model (+ unique version constraint)
+- [x] AI conversation service
+- [x] OpenAI integration (`gpt-5` default, `OPENAI_MODEL` override)
+- [x] Agent/tool architecture foundation (bounded tool loop, context-bound toolbox)
+- [x] Moroccan Darija system instructions
+- [x] Darija/French code-switching support
+- [x] Structured spec extraction (Zod-validated patches, deterministic merge)
+- [x] Missing-information detection (deterministic, not model-decided)
+- [x] Clarification questions
+- [x] Conversation context management (spec injected, not replayed)
+- [x] Chat UI
+- [x] User approval flow (no AI tool can approve)
+- [x] ProjectVersion snapshot on approval
+
+### Deferred out of T1 (deliberately)
+
+- [ ] Streaming replies — non-streaming is sufficient; revisit with Inngest (Phase 12)
+- [ ] Image/vision input in the conversation — depends on file storage (Phase 2)
+- [ ] `create_project` / `request_missing_information` tools — not needed by this flow
 
 ### Definition of done
 
@@ -553,14 +559,33 @@ Do not automatically start the next milestone.
 Completed:
 
 - [x] **T0 — Repository and Application Foundation** (Phase 0)
+- [x] **T1 — Moroccan Darija AI Intake** (Phase 1)
 
 Active milestone:
 
-- [ ] None. T0 is complete and verified; T1 has not been started.
+- [ ] None. T1 is complete; T2 has not been started.
 
 Next milestone:
 
-- [ ] **T1 — Moroccan Darija AI Intake** (Phase 1)
+- [ ] **T2 — Project File Management** (Phase 2)
+
+### T1 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 54 passed |
+| Integration tests | 21 passed against Neon |
+| Live Darija evaluations | see note below |
+| Production build | passed, 11 routes |
+| Migrations | 3 applied |
+| Auth boundary | all new routes return JSON 401 unauthenticated |
+
+**Live model behaviour is NOT yet verified.** `OPENAI_API_KEY` was unset, so the
+Darija evaluation suite (`npm run test:eval`) self-skipped. Everything around
+the model — tool authorization, spec merging, completeness, approval, snapshots,
+the 503 path — is verified. The conversation quality itself is not.
 
 ### T0 verification record
 

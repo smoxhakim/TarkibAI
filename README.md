@@ -153,6 +153,7 @@ longer backports to the 14 line, including authorization-bypass and SSRF issues.
 | `@prisma/adapter-pg` | 7.10.0 |
 | Clerk (`@clerk/nextjs`) | 7.9.1 |
 | Zod | 4.5.4 |
+| OpenAI SDK | 7.10.0 |
 | Vitest | 5.0.0 |
 
 Database is PostgreSQL on **Neon**; hosting target is **Vercel**.
@@ -185,7 +186,6 @@ accumulating advisories.
 
 | Package | Added in |
 | --- | --- |
-| `openai` | Phase 1 — Darija conversational AI |
 | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | Phase 2 — R2 file storage |
 | `sharp` | Phase 2 — image processing |
 | `inngest` | Phase 12 — background jobs for mockups |
@@ -229,9 +229,12 @@ src/
     api/
       projects/           # GET, POST
       projects/[id]/      # GET, PATCH, DELETE
-      projects/[id]/messages/  # 501 until Phase 1
+      projects/[id]/messages/       # GET, POST — one Darija intake turn
+      projects/[id]/spec/           # GET — structured specification
+      projects/[id]/spec/approve/   # POST — user-only approval
 
-  components/             # StatusBadge, NewProjectForm, ProjectActions
+  components/             # StatusBadge, NewProjectForm, ProjectActions,
+                          # ChatPanel, SpecPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -239,7 +242,14 @@ src/
     auth/current-user.ts  # Clerk session -> User row
     http/api.ts           # ApiError, route wrapper, JSON error shapes
     projects/             # schema (Zod), service (ownership), status rules
-    ai/                   # (stub) Phase 1
+    ai/
+      config.ts           # model + feature gate
+      agent.ts            # bounded tool-calling loop
+      conversation-service.ts
+      prompts/system.ts   # Moroccan Darija instructions
+      tools/              # context-bound toolbox (no approval tool)
+      eval/               # live Darija evaluation cases
+    spec/                 # schema, deterministic merge, completeness, service
     calc/                 # (stub) Phase 4
     pdf/                  # (stub) Phase 13
     canvas/, geometry/, mockup/, storage/   # (planned)
@@ -321,6 +331,13 @@ Fill in four variables; leave the rest blank until their phase arrives.
 | `DIRECT_URL` | Neon connection string with **pooling OFF** |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk → API keys (`pk_...`) |
 | `CLERK_SECRET_KEY` | Clerk → API keys (`sk_...`) |
+| `OPENAI_API_KEY` | platform.openai.com → API keys (`sk-...`) |
+
+`OPENAI_MODEL` is optional and defaults to `gpt-5`.
+
+Without `OPENAI_API_KEY` the application still runs: the conversation endpoint
+returns 503 and the chat panel says the assistant is not configured. Nothing
+else is affected.
 
 Two database URLs are required because Neon's pooler runs in transaction mode
 and cannot hold the advisory locks `prisma migrate` needs. Runtime queries use
@@ -356,6 +373,7 @@ Open http://localhost:3000
 | `npm run lint` | ESLint |
 | `npm test` | Unit tests (no database required) |
 | `npm run test:integration` | Integration tests against the real database |
+| `npm run test:eval` | Live Moroccan Darija evaluations (needs `OPENAI_API_KEY`; self-skips without one) |
 | `npm run prisma:migrate` | Create and apply a migration |
 | `npm run prisma:studio` | Browse the database |
 
@@ -402,7 +420,7 @@ Tracks the active development roadmap and milestone status.
 
 TARKIB is built progressively according to the roadmap in `TODO.md`.
 
-**Completed: T0 — Repository and Application Foundation (Phase 0)**
+**Completed: T0 — Foundation (Phase 0), T1 — Darija AI Intake (Phase 1)**
 
 Working end to end:
 
@@ -414,12 +432,16 @@ Working end to end:
 - Loading, empty, and error states on every implemented screen
 - 18 unit tests, 7 integration tests, clean typecheck, clean production build
 
-**Next: T1 — Moroccan Darija AI Intake (Phase 1)**
+T1 adds: a Moroccan Darija conversation that extracts a structured
+specification through validated tool calls, deterministic missing-field
+detection, and explicit user approval that snapshots a project version. The
+agent has no tool that can approve anything.
 
-Not yet implemented. `/api/projects/[id]/messages` authenticates and authorises
-correctly but returns **501**, and the project workspace panels are explicitly
-labelled as unbuilt. Nothing in the product returns a fabricated number or a
-mocked AI reply.
+**Next: T2 — Project File Management (Phase 2)**
+
+Not yet implemented. Materials, calculations, and document panels remain
+explicitly labelled as unbuilt. Nothing in the product returns a fabricated
+number or a mocked AI reply.
 
 A milestone is complete only when the functionality works end to end — not when
 UI files or API stubs exist.

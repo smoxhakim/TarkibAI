@@ -87,13 +87,22 @@ model Project {
 }
 
 model ChatMessage {
-  id                String   @id @default(uuid())
+  id                String  @id @default(uuid())
   projectId         String
-  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  role              String // user|assistant|system
+  project           Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role              String // user|assistant
   content           String
   attachmentFileIds Json?
-  createdAt         DateTime @default(now())
+
+  // Audit trail of tools the agent invoked on this turn (name + arguments).
+  // The conversation sent to the model is rebuilt from the structured spec plus
+  // plain user/assistant text, so tool plumbing is NOT replayed from here —
+  // chat history is not the source of truth (PRD §9).
+  toolCalls Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 model File {
@@ -117,6 +126,9 @@ model ProjectSpec {
   status     String    @default("draft") // draft|approved
   approvedAt DateTime?
   createdAt  DateTime  @default(now())
+
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
 }
 
 model ProjectVersion {
@@ -128,6 +140,8 @@ model ProjectVersion {
   specSnapshot  Json
   costSnapshot  Json?
   createdAt     DateTime @default(now())
+
+  @@unique([projectId, versionNumber])
 }
 
 model Material {
