@@ -111,20 +111,30 @@ Users can attach and manage project references securely, and the AI can use supp
 
 # Phase 3 — Material System
 
-## T3 — User Material Library
+## T3 — User Material Library ✅ COMPLETE
 
-- [ ] Material model
-- [ ] Material CRUD
-- [ ] Categories
-- [ ] Custom categories
-- [ ] Suppliers
-- [ ] Standard sizes
-- [ ] Units
-- [ ] Thickness
-- [ ] Prices
-- [ ] Technical properties
-- [ ] Material management UI
-- [ ] Material search and filtering
+- [x] Material model (structured mm dimensions, measurement model, archivedAt)
+- [x] Material CRUD
+- [x] Categories
+- [x] Custom categories
+- [x] Suppliers
+- [x] Standard sizes (integer millimetres, validated per measurement model)
+- [x] Units (measurementModel: linear | sheet | area | piece)
+- [x] Thickness (Decimal mm)
+- [x] Prices (integer minor units, per purchase unit)
+- [x] Technical properties (extensible Json)
+- [x] Material management UI (`/materials`)
+- [x] Material search and filtering (name/supplier/notes, category, model, archived)
+- [x] Project material selection (calculated fields deliberately null until T4)
+
+### Deferred out of T3 (deliberately)
+
+- [ ] AI tools for materials (`list_materials`, `get_material`) — the agent still
+      records materials as free text in the spec; linking spec materials to
+      library records belongs with calculation in T4
+- [ ] Technical-properties editor UI — the column is live and extensible, but no
+      form exposes it until a domain rule needs one
+- [ ] Bulk import of a supplier price list
 
 ### Definition of done
 
@@ -567,14 +577,31 @@ Completed:
 - [x] **T0 — Repository and Application Foundation** (Phase 0)
 - [x] **T1 — Moroccan Darija AI Intake** (Phase 1)
 - [x] **T2 — Project File Management** (Phase 2)
+- [x] **T3 — User Material Library** (Phase 3)
 
 Active milestone:
 
-- [ ] None. T3 has not been started.
+- [ ] None. T4 has not been started.
 
 Next milestone:
 
-- [ ] **T3 — User Material Library** (Phase 3)
+- [ ] **T4 — Material Calculation** (Phase 4)
+
+### T3 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 100 passed |
+| Integration tests | 42 passed against Neon |
+| Production build | passed, 21 routes |
+| Migrations | 5 applied |
+| Auth boundary | all material routes return JSON 401; `/materials` redirects |
+
+Library isolation is covered explicitly: another user's materials never appear
+in a listing, cannot be read, edited, archived or deleted, and cannot be
+selected into a project.
 
 ### T2 verification record
 

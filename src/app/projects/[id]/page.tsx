@@ -14,6 +14,9 @@ import { getSpec } from '@/lib/spec/service';
 import { FilesPanel } from '@/components/FilesPanel';
 import { listFiles } from '@/lib/files/service';
 import { isStorageConfigured } from '@/lib/storage/config';
+import { ProjectMaterialsPanel } from '@/components/ProjectMaterialsPanel';
+import { listMaterials, listProjectMaterials } from '@/lib/materials/service';
+import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,11 +55,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     throw error;
   }
 
-  const [messages, spec, files] = await Promise.all([
+  const [messages, spec, files, projectMaterials, library, costSettings] = await Promise.all([
     listMessages(project.id, user.id),
     getSpec(project.id, user.id),
     listFiles(project.id, user.id),
+    listProjectMaterials(project.id, user.id),
+    listMaterials(user.id, { includeArchived: false }),
+    prisma.costSettings.findUnique({ where: { userId: user.id } }),
   ]);
+  const currency = costSettings?.currency ?? 'MAD';
   const aiConfigured = isAiConfigured();
   const storageConfigured = isStorageConfigured();
 
@@ -110,7 +117,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             complete: spec.complete,
           }}
         />
-        <PendingPanel title={strings.workspace.materials} note={strings.workspace.materialsNote} />
+        <ProjectMaterialsPanel
+          projectId={project.id}
+          currency={currency}
+          selected={projectMaterials.map((row) => ({
+            ...row,
+            calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,
+          }))}
+          library={library.map((m) => ({ id: m.id, name: m.name, category: m.category }))}
+        />
         <PendingPanel title={strings.workspace.documents} note={strings.workspace.documentsNote} />
       </div>
     </main>
