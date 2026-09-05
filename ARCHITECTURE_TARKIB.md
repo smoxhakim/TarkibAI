@@ -155,7 +155,6 @@ Example tools:
 - get_project_spec
 - update_project_spec
 - request_missing_information
-- approve_spec
 - list_materials
 - get_material
 - calculate_materials
@@ -168,6 +167,14 @@ Example tools:
 - get_versions
 
 Every tool must validate inputs and authorization.
+
+**There is deliberately no `approve_spec` tool.** An earlier draft of this
+document listed one. It was removed in T1 because it contradicts PRD §5.4: if
+the model can call approval, then consent is whatever the model infers from free
+text, and an ambiguous "wakha" or "ok" can lock in a specification the user was
+still editing. Approval is a user action in the UI, reaching
+`POST /api/projects/:id/spec/approve`, which no tool wraps. The agent may say a
+specification looks complete and invite review; it cannot approve it.
 
 ### 4.4 Server authority
 
@@ -1369,3 +1376,50 @@ are unbuilt rather than displaying placeholder figures.
 **UI chrome language is English.** The conversational layer remains Moroccan
 Darija. Chrome strings are centralised in `src/lib/strings.ts` so a second
 language can be added without touching component code.
+
+### T1 — Darija AI Intake (Phase 1)
+
+**Approval removed from the tool surface.** See §4.3. The agent has exactly two
+tools — `get_project_spec` and `update_project_spec` — and no path to approval.
+
+**Tools are bound, not parameterised.** `buildToolbox(projectId, userId)`
+closes over the authenticated identifiers, so `projectId` and `userId` are not
+tool parameters at all. The model cannot address another project or assume
+another identity regardless of what it emits, which is a stronger guarantee than
+validating a model-supplied id would be.
+
+**The spec is injected, not replayed.** Each turn sends the system prompt, a
+freshly rendered snapshot of the current structured specification plus its
+missing fields, and the recent plain-text messages. Tool-call plumbing is not
+replayed from history. This follows PRD §9 — the specification is the source of
+truth, so the agent stays correct even after older messages fall outside the
+history window.
+
+**Completeness is deterministic.** `missingFields()` decides what is missing and
+whether approval is permitted. The model is told the answer; it never computes
+it. Approval is refused server-side while anything required is absent, so a
+persuasive reply cannot advance the project.
+
+**Merge semantics are explicit.** Omitted keys retain their value, `null`
+clears, nested objects merge key by key, and arrays are replaced wholesale.
+Array replacement is intentional: merging them would make removing a material
+impossible and would duplicate entries whenever the agent restated a list.
+
+**Approved specifications are immutable.** A patch arriving after approval opens
+a new draft version seeded from the approved one rather than editing it. An
+approved spec is the fixed point that versions and later documents refer back
+to.
+
+**The application runs without an OpenAI key.** `isAiConfigured()` gates the
+conversation; the endpoint returns 503 and the UI says the assistant is not
+configured. Every other feature keeps working.
+
+**Non-streaming replies.** A turn is one request with a pending state.
+Interleaving a token stream with a multi-step tool loop adds significant
+complexity, and long turns move to Inngest in Phase 12 regardless. The data
+model does not change if streaming is added later.
+
+**Model choice.** `gpt-5` by default, overridable with `OPENAI_MODEL`. Darija in
+two scripts with French and English code-switching is a demanding multilingual
+task, and the dominant failure mode to avoid is inventing a dimension the user
+never gave.

@@ -6,6 +6,11 @@ import { getProject } from '@/lib/projects/service';
 import { strings } from '@/lib/strings';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ProjectActions } from '@/components/ProjectActions';
+import { ChatPanel } from '@/components/ChatPanel';
+import { SpecPanel } from '@/components/SpecPanel';
+import { listMessages } from '@/lib/ai/conversation-service';
+import { isAiConfigured } from '@/lib/ai/config';
+import { getSpec } from '@/lib/spec/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +49,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     throw error;
   }
 
+  const [messages, spec] = await Promise.all([
+    listMessages(project.id, user.id),
+    getSpec(project.id, user.id),
+  ]);
+  const aiConfigured = isAiConfigured();
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
       <Link
@@ -72,8 +83,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </div>
 
       <div className="mt-6 flex flex-col gap-3">
-        <PendingPanel title={strings.workspace.conversation} note={strings.workspace.conversationNote} />
-        <PendingPanel title={strings.workspace.specification} note={strings.workspace.specificationNote} />
+        <ChatPanel
+          projectId={project.id}
+          initialMessages={messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() }))}
+          aiConfigured={aiConfigured}
+        />
+        <SpecPanel
+          projectId={project.id}
+          data={{
+            spec: spec.spec,
+            version: spec.version,
+            status: spec.status,
+            approvedAt: spec.approvedAt ? spec.approvedAt.toISOString() : null,
+            missing: spec.missing,
+            complete: spec.complete,
+          }}
+        />
         <PendingPanel title={strings.workspace.materials} note={strings.workspace.materialsNote} />
         <PendingPanel title={strings.workspace.documents} note={strings.workspace.documentsNote} />
       </div>

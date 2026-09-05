@@ -1,37 +1,33 @@
 import type { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { requireDbUser } from '@/lib/auth/current-user';
-import { ApiError, handleRoute } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { handleRoute, readJson } from '@/lib/http/api';
+import { listMessages, runConversationTurn } from '@/lib/ai/conversation-service';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-/**
- * The Moroccan Darija conversation layer is built in Phase 1 (T1).
- *
- * Authentication and ownership are enforced here already so the boundary is
- * correct from the start, but the endpoints return 501 rather than fabricating
- * an empty message list or a fake assistant reply — a caller must be able to
- * tell "no messages" apart from "not implemented".
- */
-const notImplemented = () =>
-  new ApiError(501, 'The conversation layer is not implemented yet (Phase 1).', 'not_implemented');
+// A tool-calling turn against a reasoning model can legitimately take a while.
+export const maxDuration = 120;
 
-// GET /api/projects/:id/messages
+const sendMessageSchema = z.object({
+  content: z.string().trim().min(1, 'Write a message first.').max(4000),
+});
+
+// GET /api/projects/:id/messages — full conversation history
 export async function GET(_req: NextRequest, { params }: RouteContext) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const { id } = await params;
-    await assertProjectAccess(id, user.id);
-    throw notImplemented();
+    return { messages: await listMessages(id, user.id) };
   });
 }
 
-// POST /api/projects/:id/messages
-export async function POST(_req: NextRequest, { params }: RouteContext) {
+// POST /api/projects/:id/messages — run one intake turn { content }
+export async function POST(req: NextRequest, { params }: RouteContext) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const { id } = await params;
-    await assertProjectAccess(id, user.id);
-    throw notImplemented();
+    const { content } = sendMessageSchema.parse(await readJson(req));
+    return runConversationTurn(id, user.id, content);
   });
 }
