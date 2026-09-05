@@ -577,15 +577,20 @@ Next milestone:
 | ESLint | 0 errors |
 | Unit tests | 54 passed |
 | Integration tests | 21 passed against Neon |
-| Live Darija evaluations | see note below |
+| Live Darija evaluations | 7 passed against gpt-5 |
 | Production build | passed, 11 routes |
 | Migrations | 3 applied |
 | Auth boundary | all new routes return JSON 401 unauthenticated |
 
-**Live model behaviour is NOT yet verified.** `OPENAI_API_KEY` was unset, so the
-Darija evaluation suite (`npm run test:eval`) self-skipped. Everything around
-the model — tool authorization, spec merging, completeness, approval, snapshots,
-the 503 path — is verified. The conversation quality itself is not.
+**Live model behaviour verified** against `gpt-5` on 2026-09-05. The evaluation
+suite caught one real defect: the agent asked the user to confirm an explicit
+correction instead of applying it, leaving the specification stale. Cause was a
+system-prompt rule, not the deterministic layer; fixed and re-verified.
+
+Known behavioural note carried into later phases: relative changes such as
+"zid 50cm f l3ard" require arithmetic on an existing value. The agent must not
+perform that arithmetic itself (PRD §5.3). Handling relative edits deterministically
+belongs to T7 — Conversational Design Editing.
 
 ### T0 verification record
 
