@@ -11,6 +11,9 @@ export const maxDuration = 120;
 
 const sendMessageSchema = z.object({
   content: z.string().trim().min(1, 'Write a message first.').max(4000),
+  // Ids are re-checked against the project server-side, so an id from another
+  // project cannot be smuggled in here.
+  attachmentFileIds: z.array(z.string().uuid()).max(10).optional(),
 });
 
 // GET /api/projects/:id/messages — full conversation history
@@ -27,7 +30,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const { id } = await params;
-    const { content } = sendMessageSchema.parse(await readJson(req));
-    return runConversationTurn(id, user.id, content);
+    const { content, attachmentFileIds } = sendMessageSchema.parse(await readJson(req));
+    return runConversationTurn(id, user.id, content, attachmentFileIds ?? []);
   });
 }

@@ -11,6 +11,9 @@ import { SpecPanel } from '@/components/SpecPanel';
 import { listMessages } from '@/lib/ai/conversation-service';
 import { isAiConfigured } from '@/lib/ai/config';
 import { getSpec } from '@/lib/spec/service';
+import { FilesPanel } from '@/components/FilesPanel';
+import { listFiles } from '@/lib/files/service';
+import { isStorageConfigured } from '@/lib/storage/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,11 +52,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     throw error;
   }
 
-  const [messages, spec] = await Promise.all([
+  const [messages, spec, files] = await Promise.all([
     listMessages(project.id, user.id),
     getSpec(project.id, user.id),
+    listFiles(project.id, user.id),
   ]);
   const aiConfigured = isAiConfigured();
+  const storageConfigured = isStorageConfigured();
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -87,6 +92,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           projectId={project.id}
           initialMessages={messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() }))}
           aiConfigured={aiConfigured}
+          files={files.map((f) => ({ id: f.id, originalName: f.originalName, mimeType: f.mimeType }))}
+        />
+        <FilesPanel
+          projectId={project.id}
+          files={files.map((f) => ({ ...f, createdAt: f.createdAt.toISOString() }))}
+          storageConfigured={storageConfigured}
         />
         <SpecPanel
           projectId={project.id}

@@ -5,7 +5,9 @@ import { ApiError } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import { getSpec } from '@/lib/spec/service';
 import type { SpecView } from '@/lib/spec/service';
-import { HISTORY_WINDOW, isAiConfigured } from './config';
+import { loadReadyFiles } from '@/lib/files/service';
+import { HISTORY_WINDOW, IMAGE_CONTEXT_MESSAGES, isAiConfigured } from './config';
+import { buildImageParts } from './vision';
 import { runAgent } from './agent';
 import { TARKIB_SYSTEM_PROMPT, buildSpecStateMessage } from './prompts/system';
 import { buildToolbox } from './tools';
@@ -14,8 +16,15 @@ export type ChatMessageView = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachmentFileIds: string[];
   createdAt: Date;
 };
+
+/** Reads the JSON attachment column defensively — it is untyped in the database. */
+function readAttachmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
 
 export type ConversationTurn = {
   userMessage: ChatMessageView;
@@ -40,6 +49,7 @@ export async function listMessages(projectId: string, userId: string): Promise<C
     id: row.id,
     role: row.role as 'user' | 'assistant',
     content: row.content,
+    attachmentFileIds: readAttachmentIds(row.attachmentFileIds),
     createdAt: row.createdAt,
   }));
 }
@@ -56,7 +66,8 @@ export async function listMessages(projectId: string, userId: string): Promise<C
 export async function runConversationTurn(
   projectId: string,
   userId: string,
-  content: string
+  content: string,
+  attachmentFileIds: string[] = []
 ): Promise<ConversationTurn> {
   await assertProjectAccess(projectId, userId);
   if (!isAiConfigured()) throw aiUnavailable();
@@ -70,14 +81,46 @@ export async function runConversationTurn(
 
   const specBefore = await getSpec(projectId, userId);
 
+  // Images from the most recent few messages are re-sent so the agent can still
+  // answer a follow-up question about a photo a couple of turns later, while
+  // cost stays bounded on a long conversation.
+  const recent = history.slice(-IMAGE_CONTEXT_MESSAGES);
+  const recentAttachmentIds = recent.flatMap((row) => readAttachmentIds(row.attachmentFileIds));
+  const historyImageFiles = await loadReadyFiles(projectId, recentAttachmentIds);
+  const historyImagesById = new Map(historyImageFiles.map((file) => [file.id, file]));
+
+  const historyMessages: ChatCompletionMessageParam[] = await Promise.all(
+    history.map(async (row) => {
+      if (row.role === 'assistant') {
+        return { role: 'assistant' as const, content: row.content };
+      }
+      const attachedFiles = readAttachmentIds(row.attachmentFileIds)
+        .map((id) => historyImagesById.get(id))
+        .filter((file): file is NonNullable<typeof file> => Boolean(file));
+
+      if (attachedFiles.length === 0) {
+        return { role: 'user' as const, content: row.content };
+      }
+      const imageParts = await buildImageParts(attachedFiles);
+      return {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: row.content }, ...imageParts],
+      };
+    })
+  );
+
+  // Attachments on THIS message. Loading them through the file service means the
+  // ids are scoped to this project, so a foreign file id cannot be smuggled in.
+  const newFiles = await loadReadyFiles(projectId, attachmentFileIds);
+  const newImageParts = await buildImageParts(newFiles);
+
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: TARKIB_SYSTEM_PROMPT },
     { role: 'system', content: buildSpecStateMessage(specBefore.spec, specBefore.missing) },
-    ...history.map((row) => ({
-      role: row.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-      content: row.content,
-    })),
-    { role: 'user', content },
+    ...historyMessages,
+    newImageParts.length > 0
+      ? { role: 'user', content: [{ type: 'text' as const, text: content }, ...newImageParts] }
+      : { role: 'user', content },
   ];
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -92,7 +135,15 @@ export async function runConversationTurn(
   // Persisted only after the agent succeeds, so a failed turn does not leave the
   // user's message stranded in a conversation that was never answered.
   const [userMessage, assistantMessage] = await prisma.$transaction([
-    prisma.chatMessage.create({ data: { projectId, role: 'user', content } }),
+    prisma.chatMessage.create({
+      data: {
+        projectId,
+        role: 'user',
+        content,
+        // Only ids that resolved to ready files in THIS project are recorded.
+        attachmentFileIds: newFiles.length > 0 ? newFiles.map((file) => file.id) : undefined,
+      },
+    }),
     prisma.chatMessage.create({
       data: {
         projectId,
@@ -108,12 +159,14 @@ export async function runConversationTurn(
       id: userMessage.id,
       role: 'user',
       content: userMessage.content,
+      attachmentFileIds: newFiles.map((file) => file.id),
       createdAt: userMessage.createdAt,
     },
     assistantMessage: {
       id: assistantMessage.id,
       role: 'assistant',
       content: assistantMessage.content,
+      attachmentFileIds: [],
       createdAt: assistantMessage.createdAt,
     },
     spec: await getSpec(projectId, userId),

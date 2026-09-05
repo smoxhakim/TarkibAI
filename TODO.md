@@ -83,19 +83,25 @@ A user can describe a signage project naturally in Moroccan Darija, receive clar
 
 # Phase 2 — Files and Visual References
 
-## T2 — Project File Management
+## T2 — Project File Management ✅ COMPLETE
 
-- [ ] Cloudflare R2 storage layer
-- [ ] Presigned uploads
-- [ ] Private file access
-- [ ] Upload images
-- [ ] Upload logos
-- [ ] Upload reference images
-- [ ] Upload sketches
-- [ ] Project attachment management
-- [ ] File metadata
-- [ ] Secure signed downloads
-- [ ] AI access to relevant visual context
+- [x] Cloudflare R2 storage layer
+- [x] Presigned uploads (browser → R2 direct)
+- [x] Private file access (no URL ever stored; signed, short-lived reads)
+- [x] Upload images
+- [x] Upload logos
+- [x] Upload reference images
+- [x] Upload sketches
+- [x] Project attachment management (list, preview, download, delete)
+- [x] File metadata (original name, mime type, verified size, status)
+- [x] Secure signed downloads
+- [x] AI access to relevant visual context (downscaled, inlined, recent-message window)
+
+### Deferred out of T2 (deliberately)
+
+- [ ] PDF content extraction — stored and downloadable, but not readable by the vision model
+- [ ] Server-side image content sniffing — type is validated by declared MIME and bound into the upload signature; byte-level sniffing belongs with the validation layer in T16
+- [ ] Orphaned-object sweep for abandoned pending uploads
 
 ### Definition of done
 
@@ -560,14 +566,41 @@ Completed:
 
 - [x] **T0 — Repository and Application Foundation** (Phase 0)
 - [x] **T1 — Moroccan Darija AI Intake** (Phase 1)
+- [x] **T2 — Project File Management** (Phase 2)
 
 Active milestone:
 
-- [ ] None. T1 is complete; T2 has not been started.
+- [ ] None. T3 has not been started.
 
 Next milestone:
 
-- [ ] **T2 — Project File Management** (Phase 2)
+- [ ] **T3 — User Material Library** (Phase 3)
+
+### T2 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 71 passed |
+| Integration tests | 27 passed against Neon |
+| Production build | passed, 15 routes |
+| Migrations | 4 applied |
+| Auth boundary | all file routes return JSON 401; download leaks no redirect target |
+| Live R2 round trip | passed against the real bucket |
+| Live vision turn | passed — model read text off an uploaded image |
+
+**Live R2 behaviour verified** on 2026-09-05 against the real bucket:
+
+- presigned PUT, HEAD verification, server-side read, signed download and
+  delete all succeed
+- an object URL with its signature stripped is refused (HTTP 400), which is the
+  assumption the whole private-storage design rests on
+- the API token is bucket-scoped: listing an unrelated bucket in the same
+  Cloudflare account fails with AccessDenied
+- a Darija turn with an attached image returned the text visible in that image,
+  confirming R2 read, sharp re-encoding and the vision request all work
+- an attachment id from another project is silently dropped rather than honoured
 
 ### T1 verification record
 
