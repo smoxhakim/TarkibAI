@@ -149,6 +149,17 @@ export async function deleteMaterial(materialId: string, userId: string): Promis
 /* Project selection                                                           */
 /* -------------------------------------------------------------------------- */
 
+export type CalculationStep = { label: string; value: string };
+export type CalculationWarning = { code: string; message: string };
+
+/**
+ * Why a calculated line no longer reflects the project.
+ *
+ * Derived data goes stale when its inputs move (PRD §24). Rather than silently
+ * showing an out-of-date purchase count, the line says which input changed.
+ */
+export type StaleReason = 'spec_changed' | 'material_changed' | 'requirement_changed';
+
 export type ProjectMaterialView = {
   id: string;
   materialId: string;
@@ -157,12 +168,39 @@ export type ProjectMaterialView = {
   measurementModel: string;
   role: string | null;
   unitPriceCents: number;
-  /** Null until the T4 calculation engine runs. Never zero-filled. */
+
+  /** User-stated input. Null when they have not said how much they need. */
   requiredQuantity: string | null;
+  requiredDimensions: string | null;
+
+  /** Results. All null until the calculation engine runs. Never zero-filled. */
   unitsToPurchase: number | null;
+  totalPurchasedQuantity: string | null;
+  wasteQuantity: string | null;
+  wastePercent: string | null;
+  unitPriceCentsSnapshot: number | null;
   totalCostCents: number | null;
   calculatedAt: Date | null;
+  unsupportedReason: string | null;
+
+  /** Audit trail of how the numbers were reached, snapshotted at calculation time. */
+  steps: CalculationStep[];
+  warnings: CalculationWarning[];
+
+  staleReasons: StaleReason[];
 };
+
+/** Reads the snapshotted explanation defensively — it is untyped JSON. */
+function readCalculationInputs(value: unknown): {
+  steps: CalculationStep[];
+  warnings: CalculationWarning[];
+} {
+  if (typeof value !== 'object' || value === null) return { steps: [], warnings: [] };
+  const record = value as Record<string, unknown>;
+  const steps = Array.isArray(record.steps) ? (record.steps as CalculationStep[]) : [];
+  const warnings = Array.isArray(record.warnings) ? (record.warnings as CalculationWarning[]) : [];
+  return { steps, warnings };
+}
 
 export async function listProjectMaterials(
   projectId: string,
@@ -170,25 +208,95 @@ export async function listProjectMaterials(
 ): Promise<ProjectMaterialView[]> {
   await assertProjectAccess(projectId, userId);
 
-  const rows = await prisma.projectMaterial.findMany({
-    where: { projectId },
-    include: { material: true },
-    orderBy: { createdAt: 'asc' },
+  const [rows, approvedSpec] = await Promise.all([
+    prisma.projectMaterial.findMany({
+      where: { projectId },
+      include: { material: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.projectSpec.findFirst({
+      where: { projectId, status: 'approved' },
+      orderBy: { version: 'desc' },
+    }),
+  ]);
+
+  return rows.map((row) => {
+    const { steps, warnings } = readCalculationInputs(row.calculationInputs);
+
+    const staleReasons: StaleReason[] = [];
+    if (row.calculatedAt) {
+      // A newer approved spec means the project itself changed shape.
+      if (approvedSpec && row.specVersionAtCalculation !== null && approvedSpec.version > row.specVersionAtCalculation) {
+        staleReasons.push('spec_changed');
+      }
+      // An edited material may have a different price or stock size.
+      if (row.material.updatedAt > row.calculatedAt) {
+        staleReasons.push('material_changed');
+      }
+      // The requirement was edited after the numbers were produced. This uses
+      // requirementUpdatedAt, not updatedAt: the calculation writes to this row
+      // too, so updatedAt would mark every line stale the instant it was
+      // calculated.
+      if (row.requirementUpdatedAt && row.requirementUpdatedAt > row.calculatedAt) {
+        staleReasons.push('requirement_changed');
+      }
+    }
+
+    return {
+      id: row.id,
+      materialId: row.materialId,
+      name: row.material.name,
+      category: row.material.category,
+      measurementModel: row.material.measurementModel,
+      role: row.role,
+      unitPriceCents: row.material.unitPriceCents,
+      requiredQuantity: row.requiredQuantity?.toString() ?? null,
+      requiredDimensions: row.requiredDimensions,
+      unitsToPurchase: row.unitsToPurchase,
+      totalPurchasedQuantity: row.totalPurchasedQuantity?.toString() ?? null,
+      wasteQuantity: row.wasteQuantity?.toString() ?? null,
+      wastePercent: row.wastePercent?.toString() ?? null,
+      unitPriceCentsSnapshot: row.unitPriceCentsSnapshot,
+      totalCostCents: row.totalCostCents,
+      calculatedAt: row.calculatedAt,
+      unsupportedReason: row.unsupportedReason,
+      steps,
+      warnings,
+      staleReasons,
+    };
+  });
+}
+
+/**
+ * Sets how much of a material the project needs.
+ *
+ * This is the one number the engine does not derive, so it is recorded as a
+ * plain input. Existing results are NOT cleared here: they stay visible and are
+ * flagged stale, so the user can see what the old numbers were while deciding
+ * to recalculate.
+ */
+export async function updateProjectMaterialRequirement(
+  projectId: string,
+  userId: string,
+  projectMaterialId: string,
+  input: { requiredQuantity: number | null; requiredDimensions: string | null; role?: string | null }
+): Promise<ProjectMaterialView[]> {
+  await assertProjectAccess(projectId, userId);
+
+  const row = await prisma.projectMaterial.findUnique({ where: { id: projectMaterialId } });
+  if (!row || row.projectId !== projectId) throw notFound('Project material');
+
+  await prisma.projectMaterial.update({
+    where: { id: row.id },
+    data: {
+      requiredQuantity: input.requiredQuantity,
+      requiredDimensions: input.requiredDimensions,
+      requirementUpdatedAt: new Date(),
+      ...(input.role !== undefined ? { role: input.role } : {}),
+    },
   });
 
-  return rows.map((row) => ({
-    id: row.id,
-    materialId: row.materialId,
-    name: row.material.name,
-    category: row.material.category,
-    measurementModel: row.material.measurementModel,
-    role: row.role,
-    unitPriceCents: row.material.unitPriceCents,
-    requiredQuantity: row.requiredQuantity?.toString() ?? null,
-    unitsToPurchase: row.unitsToPurchase,
-    totalCostCents: row.totalCostCents,
-    calculatedAt: row.calculatedAt,
-  }));
+  return listProjectMaterials(projectId, userId);
 }
 
 /**

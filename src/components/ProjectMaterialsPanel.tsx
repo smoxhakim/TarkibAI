@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { strings } from '@/lib/strings';
-import { PRICE_UNIT_LABELS, type MeasurementModel } from '@/lib/materials/schema';
 import { formatMoney } from '@/lib/materials/format';
+import { ProjectMaterialRow } from './ProjectMaterialRow';
 
 export type SelectedMaterial = {
   id: string;
@@ -16,9 +16,18 @@ export type SelectedMaterial = {
   role: string | null;
   unitPriceCents: number;
   requiredQuantity: string | null;
+  requiredDimensions: string | null;
   unitsToPurchase: number | null;
+  totalPurchasedQuantity: string | null;
+  wasteQuantity: string | null;
+  wastePercent: string | null;
+  unitPriceCentsSnapshot: number | null;
   totalCostCents: number | null;
   calculatedAt: string | Date | null;
+  unsupportedReason: string | null;
+  steps: { label: string; value: string }[];
+  warnings: { code: string; message: string }[];
+  staleReasons: ('spec_changed' | 'material_changed' | 'requirement_changed')[];
 };
 
 export type PickableMaterial = {
@@ -32,18 +41,69 @@ export function ProjectMaterialsPanel({
   selected,
   library,
   currency,
+  specApproved,
 }: {
   projectId: string;
   selected: SelectedMaterial[];
   library: PickableMaterial[];
   currency: string;
+  specApproved: boolean;
 }) {
   const router = useRouter();
   const [materialId, setMaterialId] = useState('');
   const [role, setRole] = useState('');
   const [pending, setPending] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const anyCalculated = selected.some((row) => row.calculatedAt !== null);
+  const anyRequirement = selected.some((row) => row.requiredQuantity !== null);
+  // Only lines that actually produced a cost contribute to the total.
+  const totalCostCents = selected.reduce((sum, row) => sum + (row.totalCostCents ?? 0), 0);
+
+  async function saveRequirement(
+    id: string,
+    requiredQuantity: number | null,
+    requiredDimensions: string | null
+  ) {
+    setSavingId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/materials/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requiredQuantity, requiredDimensions }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        setError(payload.error ?? strings.projectMaterials.addFailed);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function calculate() {
+    setCalculating(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/calculate-materials`, { method: 'POST' });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        setError(payload.error ?? strings.projectMaterials.calculateFailed);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError(strings.projectMaterials.calculateFailed);
+    } finally {
+      setCalculating(false);
+    }
+  }
 
   const selectedIds = new Set(selected.map((row) => row.materialId));
   const available = library.filter((material) => !selectedIds.has(material.id));
@@ -165,42 +225,61 @@ export function ProjectMaterialsPanel({
         <>
           <ul className="mt-4 flex flex-col gap-2">
             {selected.map((row) => (
-              <li
+              <ProjectMaterialRow
                 key={row.id}
-                className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-line p-3"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium">{row.name}</p>
-                  <p className="mt-0.5 text-xs text-ink-muted">
-                    {row.category}
-                    {row.role ? ` · ${row.role}` : ''}
-                    {' · '}
-                    {formatMoney(row.unitPriceCents, currency)}{' '}
-                    {PRICE_UNIT_LABELS[row.measurementModel as MeasurementModel]}
-                  </p>
-                  {/* No quantity, waste, or cost is shown until the calculation
-                      engine has actually produced one. A zero here would be a
-                      fabricated number (PRD §5.3). */}
-                  <p className="mt-1 text-xs text-ink-muted">
-                    {row.calculatedAt
-                      ? `${row.requiredQuantity ?? ''} · ${row.unitsToPurchase ?? ''} to purchase`
-                      : strings.projectMaterials.notCalculated}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => remove(row.id)}
-                  disabled={removingId === row.id}
-                  className="text-xs text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
-                >
-                  {removingId === row.id
-                    ? strings.projectMaterials.removing
-                    : strings.projectMaterials.remove}
-                </button>
-              </li>
+                row={row}
+                currency={currency}
+                busy={savingId === row.id || removingId === row.id}
+                onSaveRequirement={saveRequirement}
+                onRemove={remove}
+              />
             ))}
           </ul>
-          <p className="mt-3 text-xs text-ink-muted">{strings.projectMaterials.notCalculatedHint}</p>
+
+          <div className="mt-4 border-t border-line pt-4">
+            {!specApproved ? (
+              <div className="rounded-md border border-dashed border-line px-3 py-3">
+                <p className="text-sm font-medium">
+                  {strings.projectMaterials.calculateBlockedTitle}
+                </p>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Quantities are only calculated against an approved specification.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={calculate}
+                  disabled={calculating || !anyRequirement}
+                  className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
+                >
+                  {calculating
+                    ? strings.projectMaterials.calculating
+                    : anyCalculated
+                      ? strings.projectMaterials.recalculate
+                      : strings.projectMaterials.calculate}
+                </button>
+
+                {anyCalculated ? (
+                  <div className="text-right">
+                    <p className="text-sm">
+                      <span className="text-ink-muted">
+                        {strings.projectMaterials.totalMaterialCost}{' '}
+                      </span>
+                      <span className="font-medium">{formatMoney(totalCostCents, currency)}</span>
+                    </p>
+                    {/* Purchase prices are private business data and must never
+                        reach a client document (PRD §22, ARCHITECTURE §15). */}
+                    <p className="text-xs text-ink-muted">
+                      {strings.projectMaterials.internalOnly}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+            <p className="mt-3 text-xs text-ink-muted">{strings.projectMaterials.notCalculatedHint}</p>
+          </div>
         </>
       )}
     </section>

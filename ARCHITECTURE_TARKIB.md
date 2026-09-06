@@ -1514,3 +1514,48 @@ cutting engine would later read stale geometry.
 prices. Every query is scoped by the session-derived userId, and selecting a
 material into a project re-checks ownership so a project can never reference
 another user's pricing.
+
+### T4 — Material Calculation (Phase 4)
+
+**The requirement is an input, not a derivation.** The engine does not infer how
+much material a project needs from spec dimensions. Deriving "an 8x3 m sign
+implies a 22 m perimeter frame" would encode an assumption about how the sign is
+built, and being wrong would silently produce a wrong purchase order. The user
+states the requirement; the engine derives everything downstream from it. Spec
+driven requirements belong with domain rules (T17), not here.
+
+**All counts are integer arithmetic.** Purchase quantities come from a division
+followed by a ceiling, and in binary floating point a value that should divide
+exactly can land either side of the boundary — buying one bar too many, or one
+too few. Lengths are computed in whole millimetres, areas in square millimetres,
+via `ceilDiv`. Decimals appear only when formatting output.
+
+**Sheet counts are a labelled minimum, not an optimisation.** `ceil(required m² /
+sheet m²)` assumes pieces nest perfectly with zero offcut, which real cutting
+never achieves. Every sheet result carries a warning saying so and pointing at
+the cutting plan (T8) for the true count. This keeps the engine useful for the
+most common signage material without presenting an area division as a nesting
+result, which §14 of the PRD forbids.
+
+**Calculation requires an approved specification.** Quantities derived from a
+draft would be numbers nobody agreed to, and the stage machine expects
+spec_approved before calculated.
+
+**Inputs are snapshotted with the result.** `calculationInputs` stores the stock
+dimensions, price, derivation steps and warnings as they were at calculation
+time. Without it, editing a material afterwards would silently rewrite the
+explanation of a calculation that may already have been quoted.
+
+**Stale data is flagged, not hidden.** A line reports `spec_changed`,
+`material_changed`, or `requirement_changed` while keeping its previous numbers
+visible, so the user can see what the old result was before recalculating
+(PRD §24).
+
+`requirementUpdatedAt` exists specifically because the calculation writes to the
+same row: `updatedAt` cannot distinguish "the user changed the quantity" from
+"we just calculated", and using it marked every line stale the moment it was
+calculated.
+
+**An unsupported line stores a reason and no numbers.** If stock dimensions are
+missing the engine refuses rather than guessing, and any previous result is
+cleared — a stale number beside an "unsupported" message is worse than none.

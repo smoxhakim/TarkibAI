@@ -231,20 +231,51 @@ model ProjectMaterial {
   /// What the material is for on this project, in the user's own words.
   role String?
 
-  /// Every field below is NULL until the T4 calculation engine runs.
+  /// How much of this material the project needs, stated by the user.
+  /// Units follow the material's measurementModel: metres for linear, square
+  /// metres for sheet and area, a count for piece.
   ///
-  /// A row here means "this material is used on this project" — a selection,
-  /// not a result. Nullable rather than zero-filled so the UI can say "not
-  /// calculated yet" instead of displaying a 0 m² and 0.00 MAD that nothing
-  /// computed (PRD §5.3).
-  requiredQuantity       Decimal?
-  requiredDimensions     String?
+  /// This is an INPUT, not a result. The engine derives everything below from
+  /// it; it never invents it, because deriving a requirement from spec
+  /// dimensions would mean assuming how the sign is built (PRD §5.3).
+  requiredQuantity Decimal?
+
+  /// Optional note recording how the user arrived at the requirement, e.g.
+  /// "perimeter 2x(8+3)". Kept for auditability of a number the system did not
+  /// compute.
+  requiredDimensions String?
+
+  /// When the requirement itself last changed.
+  ///
+  /// Deliberately separate from `updatedAt`: the calculation writes its results
+  /// to this same row, which bumps `updatedAt`, so `updatedAt` cannot
+  /// distinguish "the user changed the quantity" from "we just calculated".
+  /// Using it for staleness marked every line stale the moment it was
+  /// calculated.
+  requirementUpdatedAt DateTime?
+
+  /// Results. NULL until the calculation engine runs, never zero-filled.
   unitsToPurchase        Int?
   totalPurchasedQuantity Decimal?
+  wasteQuantity          Decimal?
   wastePercent           Decimal?
   unitPriceCentsSnapshot Int?
   totalCostCents         Int?
   calculatedAt           DateTime?
+
+  /// The material's stock dimensions and price as they were at calculation
+  /// time. Without this, editing a material later would silently rewrite the
+  /// explanation of a calculation that was already run and possibly quoted.
+  calculationInputs Json?
+
+  /// Approved spec version the calculation was run against, so the UI can warn
+  /// that a newer approved spec has superseded it (PRD §24 stale data).
+  specVersionAtCalculation Int?
+
+  /// Set when the engine cannot support this material, e.g. stock dimensions
+  /// are missing. The line stays uncalculated and says why, rather than
+  /// producing a number nobody can justify.
+  unsupportedReason String?
 
   manualOverride Boolean  @default(false)
   createdAt      DateTime @default(now())

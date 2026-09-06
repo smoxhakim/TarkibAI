@@ -144,17 +144,27 @@ A user can maintain their own private material database and select materials for
 
 # Phase 4 — Deterministic Calculation Engine
 
-## T4 — Material Calculation
+## T4 — Material Calculation ✅ COMPLETE
 
-- [ ] Calculation domain structure
-- [ ] Material requirement calculation
-- [ ] Standard-unit purchase calculation
-- [ ] Required vs purchased quantity
-- [ ] Waste calculation
-- [ ] ProjectMaterial persistence
-- [ ] Calculation validation
-- [ ] Calculation explanation UI
-- [ ] Calculation tests
+- [x] Calculation domain structure (`src/lib/calc/materials/`)
+- [x] Material requirement calculation (user-stated input, never derived)
+- [x] Standard-unit purchase calculation (integer `ceilDiv`)
+- [x] Required vs purchased quantity
+- [x] Waste calculation (quantity and percentage)
+- [x] ProjectMaterial persistence (+ input snapshot for auditability)
+- [x] Calculation validation (approval gate, unsupported lines refuse rather than guess)
+- [x] Calculation explanation UI ("show working" with every derivation step)
+- [x] Calculation tests (21 engine unit tests, 12 integration tests)
+- [x] Stale detection (spec / material / requirement changed)
+
+### Deferred out of T4 (deliberately)
+
+- [ ] True sheet counts from 2D nesting — T8. Sheet results are an area-based
+      MINIMUM and say so on every line.
+- [ ] Spec-derived requirements (e.g. perimeter from dimensions) — needs domain
+      rules, T17
+- [ ] Manual override of a calculated line (`manualOverride` column exists, unused)
+- [ ] Linear offcut reuse across lines — T9
 
 ### Definition of done
 
@@ -578,14 +588,35 @@ Completed:
 - [x] **T1 — Moroccan Darija AI Intake** (Phase 1)
 - [x] **T2 — Project File Management** (Phase 2)
 - [x] **T3 — User Material Library** (Phase 3)
+- [x] **T4 — Material Calculation** (Phase 4)
 
 Active milestone:
 
-- [ ] None. T4 has not been started.
+- [ ] None. T5 has not been started.
 
 Next milestone:
 
-- [ ] **T4 — Material Calculation** (Phase 4)
+- [ ] **T5 — Cost Engine** (Phase 5)
+
+### T4 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 121 passed |
+| Integration tests | 54 passed against Neon |
+| Production build | passed, 23 routes |
+| Migrations | 7 applied |
+| Auth boundary | calculate and requirement routes return JSON 401 |
+
+The engine reproduces the PRD worked example exactly: 25 m required, 6 m bars →
+5 bars, 30 m purchased, 5 m waste, 16.67%.
+
+An integration test caught a real defect during this milestone: staleness was
+keyed on `ProjectMaterial.updatedAt`, which the calculation itself bumps, so
+every line marked itself stale immediately after being calculated. Fixed by
+tracking `requirementUpdatedAt` separately.
 
 ### T3 verification record
 
