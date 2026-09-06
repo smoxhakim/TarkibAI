@@ -245,6 +245,8 @@ src/
       projects/[id]/costs/calculate/  # POST — compute the cost
       projects/[id]/expenses/         # GET, POST
       projects/[id]/expenses/[expenseId]/  # DELETE
+      projects/[id]/canvas/           # GET, POST (scene commands)
+      projects/[id]/canvas/seed/      # POST — build from the approved spec
     cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
@@ -253,7 +255,8 @@ src/
   components/             # StatusBadge, NewProjectForm, ProjectActions,
                           # ChatPanel, SpecPanel, FilesPanel,
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
-                          # ProjectMaterialRow, CostPanel, CostSettingsForm
+                          # ProjectMaterialRow, CostPanel, CostSettingsForm,
+                          # CanvasPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -276,8 +279,9 @@ src/
     calc/
       materials/          # deterministic material engine (pure) + persistence
       costs/              # deterministic cost engine + client-safe serializer
+    canvas/               # scene schema, command reducer, SVG renderer, service
     pdf/                  # (stub) Phase 13
-    canvas/, geometry/, mockup/   # (planned)
+    geometry/, mockup/    # (planned)
 
 inngest/                  # (planned) Phase 12
 ```
@@ -454,7 +458,8 @@ Tracks the active development roadmap and milestone status.
 TARKIB is built progressively according to the roadmap in `TODO.md`.
 
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
-T3 Material Library · T4 Material Calculation · T5 Cost Engine**
+T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
+T6 Smart Canvas**
 
 Working end to end:
 
@@ -493,7 +498,13 @@ turning material cost plus labour, transport, installation and per-project
 expenses into a private internal total, then margin and tax into a client price
 — with a serializer boundary that exposes only subtotal, tax and total.
 
-**Next: T6 — Structured Smart Canvas (Phase 6)**
+T6 adds: a structured canvas holding typed objects with real millimetre
+geometry, materials and dimension annotations, rendered deterministically to
+SVG from project data rather than generated as an image. It is built from the
+approved specification and flags itself when the specification moves on. The
+validated command layer behind it is what conversational editing will drive.
+
+**Next: T7 — Conversational Design Editing (Phase 7)**
 
 Not yet implemented. The document panel remains explicitly labelled as unbuilt.
 Nothing in the product returns a fabricated number or a mocked AI reply.

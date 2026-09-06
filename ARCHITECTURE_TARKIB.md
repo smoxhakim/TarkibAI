@@ -1610,3 +1610,44 @@ but it does mean value-based leak assertions need rates where the two differ.
 **Defaults are all zero.** A user who has not configured costing gets no margin
 and no labour rate, because inventing either would silently mis-price their
 first quote.
+
+### T6 — Structured Smart Canvas (Phase 6)
+
+**The canvas is geometry, not a picture.** Objects carry integer millimetres —
+the same unit the material and cutting engines use — so an 8 m sign is 8000
+units wide and that number is the one a calculation would consume. Nothing here
+is image generation; the scene is measurable, labellable, and is the foundation
+the technical drawing system (T11) and production document (T14) build on.
+
+**The specification stays the source of truth.** A scene records
+`specVersionAtSeed` and is flagged as diverged when a newer spec is approved.
+Canvas edits are layout detail and never rewrite an approved dimension — letting
+them would allow a typo to silently change a signed-off fact without passing
+through approval (PRD §9, §5.4).
+
+**One command vocabulary.** `add_object`, `update_object`, `remove_object`
+validated by Zod and applied by a pure reducer. The edit panel uses it today and
+the T7 design tools will use exactly the same commands, so the agent inherits
+this validation instead of getting a parallel path into the data. `update_object`
+ignores undefined fields, so a width change cannot erase a label or a material
+link.
+
+**Batches are applied in memory before persisting**, so an invalid command
+midway through leaves the stored scene untouched rather than half-updated.
+
+**Seeding derives only from stated facts.** A scene is built from the approved
+width, height and unit, plus lettering ONLY when the spec records text. With no
+usable dimensions it refuses rather than drawing a placeholder rectangle — an
+unknown size is not a size.
+
+**Rendering is a pure deterministic function.** The same scene always produces
+identical SVG, which is what makes a drawing reproducible from project data.
+Labels are XML-escaped at the renderer, since they are user input rendered into
+markup.
+
+**Label placement is computed, not naive.** Structural objects (panel, frame,
+note) are typically concentric, so centring every label stacked them into
+unreadable overlap. Their labels are corner-anchored and pushed onto separate
+lines when they would collide; only objects whose label IS their content
+(lettering, lighting) are centred. This was found by rendering a realistic scene
+and looking at it — unit tests asserting valid SVG passed throughout.
