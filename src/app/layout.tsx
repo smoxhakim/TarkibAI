@@ -27,6 +27,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   <Link href="/materials" className="text-ink-muted transition-colors hover:text-ink">
                     {strings.materials.navLink}
                   </Link>
+                  <Link
+                    href="/settings/costing"
+                    className="text-ink-muted transition-colors hover:text-ink"
+                  >
+                    {strings.costSettings.navLink}
+                  </Link>
                   <UserButton />
                 </Show>
                 <Show when="signed-out">

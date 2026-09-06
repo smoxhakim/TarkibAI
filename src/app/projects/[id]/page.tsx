@@ -17,6 +17,8 @@ import { isStorageConfigured } from '@/lib/storage/config';
 import { ProjectMaterialsPanel } from '@/components/ProjectMaterialsPanel';
 import { listMaterials, listProjectMaterials } from '@/lib/materials/service';
 import { prisma } from '@/lib/db';
+import { CostPanel } from '@/components/CostPanel';
+import { getProjectCost, listExpenses } from '@/lib/calc/costs/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +64,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     listProjectMaterials(project.id, user.id),
     listMaterials(user.id, { includeArchived: false }),
     prisma.costSettings.findUnique({ where: { userId: user.id } }),
+  ]);
+  const [costView, expenses] = await Promise.all([
+    getProjectCost(project.id, user.id),
+    listExpenses(project.id, user.id),
   ]);
   const currency = costSettings?.currency ?? 'MAD';
   const aiConfigured = isAiConfigured();
@@ -126,6 +132,30 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,
           }))}
           library={library.map((m) => ({ id: m.id, name: m.name, category: m.category }))}
+        />
+        <CostPanel
+          projectId={project.id}
+          currency={currency}
+          stale={costView.stale}
+          blockedReason={costView.blockedReason}
+          expenses={expenses.map((e) => ({ id: e.id, label: e.label, amountCents: e.amountCents }))}
+          cost={
+            costView.cost
+              ? {
+                  materialsCostCents: costView.cost.materialsCostCents,
+                  laborCostCents: costView.cost.laborCostCents,
+                  transportCostCents: costView.cost.transportCostCents,
+                  installCostCents: costView.cost.installCostCents,
+                  otherCostCents: costView.cost.otherCostCents,
+                  internalTotalCents: costView.cost.internalTotalCents,
+                  marginCents: costView.cost.marginCents,
+                  clientSubtotalCents: costView.cost.clientSubtotalCents,
+                  taxCents: costView.cost.taxCents,
+                  clientTotalCents: costView.cost.clientTotalCents,
+                  computedAt: costView.cost.computedAt.toISOString(),
+                }
+              : null
+          }
         />
         <PendingPanel title={strings.workspace.documents} note={strings.workspace.documentsNote} />
       </div>
