@@ -120,6 +120,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <ProjectMaterialsPanel
           projectId={project.id}
           currency={currency}
+          specApproved={spec.status === 'approved'}
           selected={projectMaterials.map((row) => ({
             ...row,
             calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,

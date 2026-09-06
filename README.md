@@ -238,14 +238,16 @@ src/
       projects/[id]/files/[fileId]/confirm/  # POST — verify the object landed
       projects/[id]/files/[fileId]/download/ # GET — redirect to a signed URL
       projects/[id]/materials/       # GET, POST — project material selection
-      projects/[id]/materials/[projectMaterialId]/  # DELETE
+      projects/[id]/materials/[projectMaterialId]/  # PATCH (requirement), DELETE
+      projects/[id]/calculate-materials/  # POST — run the deterministic engine
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
     materials/categories/            # GET
 
   components/             # StatusBadge, NewProjectForm, ProjectActions,
                           # ChatPanel, SpecPanel, FilesPanel,
-                          # MaterialLibrary, MaterialForm, ProjectMaterialsPanel
+                          # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
+                          # ProjectMaterialRow
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -265,7 +267,8 @@ src/
     files/                # upload authorisation, confirmation, ownership
     materials/            # library CRUD, search, project selection, formatting
     storage/              # R2 client, signed URLs, object-key construction
-    calc/                 # (stub) Phase 4
+    calc/
+      materials/          # deterministic engine (pure) + persistence service
     pdf/                  # (stub) Phase 13
     canvas/, geometry/, mockup/   # (planned)
 
@@ -444,7 +447,7 @@ Tracks the active development roadmap and milestone status.
 TARKIB is built progressively according to the roadmap in `TODO.md`.
 
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
-T3 Material Library**
+T3 Material Library · T4 Material Calculation**
 
 Working end to end:
 
@@ -471,10 +474,17 @@ millimetres, categories, suppliers, prices in integer minor units, search and
 filtering, and per-project material selection. Selected materials show "not
 calculated yet" rather than a zero, because no engine has computed them.
 
-**Next: T4 — Material Calculation (Phase 4)**
+T4 adds: a deterministic material calculation engine. You state how much of each
+material the project needs; the engine derives purchase units, purchased
+quantity, waste and cost in integer arithmetic, shows its working step by step,
+and flags results as stale when the spec, the material, or the requirement
+changes underneath them. Sheet counts are an explicitly labelled minimum until
+2D nesting arrives in T8.
 
-Not yet implemented. Calculation and document panels remain explicitly labelled
-as unbuilt. Nothing in the product returns a fabricated number or a mocked AI
+**Next: T5 — Cost Engine (Phase 5)**
+
+Not yet implemented. Cost and document panels remain explicitly labelled as
+unbuilt. Nothing in the product returns a fabricated number or a mocked AI
 reply.
 
 A milestone is complete only when the functionality works end to end — not when
