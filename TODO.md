@@ -236,16 +236,26 @@ The system can represent a basic project as structured visual objects rather tha
 
 # Phase 7 — AI Design Interaction
 
-## T7 — Conversational Design Editing
+## T7 — Conversational Design Editing ✅ COMPLETE
 
-- [ ] AI design command tools
-- [ ] Modify dimensions through conversation
-- [ ] Modify materials through conversation
-- [ ] Modify object properties
-- [ ] Add/remove structured objects
-- [ ] Approval-aware design changes
-- [ ] Dependency invalidation
-- [ ] Design revision history
+- [x] AI design command tools (`get_canvas`, `propose_design_change`)
+- [x] Modify dimensions through conversation
+- [x] Modify materials through conversation (materialId on an object)
+- [x] Modify object properties
+- [x] Add/remove structured objects
+- [x] Approval-aware design changes (every AI change is a proposal)
+- [x] Dependency invalidation (a dimensional change writes a draft spec; its
+      re-approval is what marks calculations and costs stale)
+- [x] Design revision history (decided proposals are retained)
+
+### Deferred out of T7 (deliberately)
+
+- [ ] Undo of an approved change — the history records what happened but does
+      not yet offer a revert
+- [ ] Multi-step design conversations that batch several turns into one proposal
+- [ ] Agent-suggested material substitution from the library — the agent can set
+      a materialId but does not yet browse the library; that pairs with the
+      waste-reduction advice in T10
 
 ### Definition of done
 
@@ -609,14 +619,33 @@ Completed:
 - [x] **T4 — Material Calculation** (Phase 4)
 - [x] **T5 — Cost Engine** (Phase 5)
 - [x] **T6 — Structured Smart Canvas** (Phase 6)
+- [x] **T7 — Conversational Design Editing** (Phase 7)
 
 Active milestone:
 
-- [ ] None. T7 has not been started.
+- [ ] None. T8 has not been started.
 
 Next milestone:
 
-- [ ] **T7 — Conversational Design Editing** (Phase 7)
+- [ ] **T8 — Sheet Cutting Optimization** (Phase 8)
+
+### T7 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 184 passed |
+| Integration tests | 94 passed against Neon |
+| Live Darija evaluations | 15 passed, including 3 new design cases |
+| Production build | passed, 34 routes |
+| Migrations | 10 applied |
+| Auth boundary | design routes return JSON 401; no route creates a proposal directly |
+
+The milestone's definition of done is verified against the real model: "zid 50cm
+f l3ard" on an 8 m panel produces a proposal containing 8500 mm, the canvas is
+unchanged until approval, the agent does not claim the change is done, and on an
+empty canvas it declines to invent a panel to widen.
 
 ### T6 verification record
 

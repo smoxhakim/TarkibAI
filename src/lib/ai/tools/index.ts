@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { projectSpecPatchSchema } from '@/lib/spec/schema';
 import { getSpec, updateDraftSpec } from '@/lib/spec/service';
+import { getScene } from '@/lib/canvas/service';
+import { sceneCommandSchema } from '@/lib/canvas/schema';
+import { createProposal } from '@/lib/design/service';
 
 /**
  * The agent's tool surface.
@@ -17,7 +20,9 @@ import { getSpec, updateDraftSpec } from '@/lib/spec/service';
  *    write passes through the identical ownership and validation checks as a
  *    direct API call (§7).
  *
- * There is deliberately NO approval tool. Approval is a user action.
+ * There is deliberately NO approval tool, and no tool that mutates the canvas
+ * directly. The agent can read the scene and PROPOSE changes; a proposal does
+ * nothing until a person approves it in the UI.
  */
 export type ToolDefinition = {
   name: string;
@@ -29,6 +34,13 @@ export type ToolDefinition = {
 export type ToolInvocation = { name: string; arguments: unknown };
 
 const emptyObjectSchema = z.object({}).strict();
+
+/** Validates what the model sends to propose_design_change. */
+const proposeSchema = z.object({
+  summary: z.string().trim().min(1).max(600),
+  commands: z.array(sceneCommandSchema).min(1).max(20),
+  specPatch: projectSpecPatchSchema.nullable().optional(),
+});
 
 /** Zod -> JSON Schema for the two shapes we expose, written explicitly for clarity. */
 const SPEC_PATCH_JSON_SCHEMA = {
@@ -114,6 +126,65 @@ const SPEC_PATCH_JSON_SCHEMA = {
   },
 } as const;
 
+const SCENE_OBJECT_FIELDS = {
+  type: { type: 'string', enum: ['panel', 'frame', 'lettering', 'light', 'note'] },
+  label: { type: ['string', 'null'] },
+  x: { type: 'integer', description: 'Millimetres from the scene origin.' },
+  y: { type: 'integer', description: 'Millimetres from the scene origin.' },
+  widthMm: { type: 'integer' },
+  heightMm: { type: 'integer' },
+  rotationDeg: { type: 'integer' },
+  materialId: { type: ['string', 'null'], description: 'Id from the user material library.' },
+  notes: { type: ['string', 'null'] },
+  showDimensions: { type: 'boolean' },
+} as const;
+
+const PROPOSE_DESIGN_CHANGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'commands'],
+  properties: {
+    summary: {
+      type: 'string',
+      description:
+        "One or two sentences, in the user's language, describing exactly what will change and by how much. This is what the user reads before approving.",
+    },
+    commands: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind'],
+        properties: {
+          kind: { type: 'string', enum: ['add_object', 'update_object', 'remove_object'] },
+          id: { type: 'string', description: 'Target object id, for update_object and remove_object.' },
+          object: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['type', 'x', 'y', 'widthMm', 'heightMm'],
+            properties: { id: { type: 'string' }, ...SCENE_OBJECT_FIELDS },
+            description: 'The new object, for add_object.',
+          },
+          changes: {
+            type: 'object',
+            additionalProperties: false,
+            properties: SCENE_OBJECT_FIELDS,
+            description:
+              'Fields to change, for update_object. Omitted fields keep their current value.',
+          },
+        },
+      },
+    },
+    specPatch: {
+      type: ['object', 'null'],
+      description:
+        'Include ONLY when the change alters an agreed project fact such as an overall dimension. Approving then creates a new draft specification the user still has to approve separately.',
+      additionalProperties: true,
+    },
+  },
+} as const;
+
 export function buildToolbox(projectId: string, userId: string): ToolDefinition[] {
   return [
     {
@@ -125,6 +196,41 @@ export function buildToolbox(projectId: string, userId: string): ToolDefinition[
         emptyObjectSchema.parse(rawArgs ?? {});
         const view = await getSpec(projectId, userId);
         return { spec: view.spec, missing: view.missing, complete: view.complete, status: view.status };
+      },
+    },
+    {
+      name: 'get_canvas',
+      description:
+        'Read the project canvas: every object with its id, type, label, position and size in millimetres. Call this before proposing a change so you target the right object and know its current dimensions.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      execute: async (rawArgs) => {
+        emptyObjectSchema.parse(rawArgs ?? {});
+        const view = await getScene(projectId, userId);
+        return {
+          objects: view.scene.objects,
+          diverged: view.diverged,
+          seedBlockedReason: view.seedBlockedReason,
+        };
+      },
+    },
+    {
+      name: 'propose_design_change',
+      description:
+        'Propose a change to the canvas for the user to approve. This does NOT change anything by itself — the user must approve it in the interface. Always read the canvas first, compute the new value from the object\'s CURRENT dimensions, and state the exact result in the summary.',
+      parameters: PROPOSE_DESIGN_CHANGE_SCHEMA as unknown as Record<string, unknown>,
+      execute: async (rawArgs) => {
+        const parsed = proposeSchema.parse(rawArgs ?? {});
+        const proposal = await createProposal(projectId, userId, {
+          summary: parsed.summary,
+          commands: parsed.commands,
+          specPatch: parsed.specPatch ?? null,
+        });
+        return {
+          proposalId: proposal.id,
+          status: proposal.status,
+          // Told plainly so the agent does not report the change as done.
+          note: 'Proposal recorded. Nothing has changed yet — the user must approve it in the interface.',
+        };
       },
     },
     {
