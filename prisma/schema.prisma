@@ -100,6 +100,7 @@ model Project {
   costs            ProjectCost[]
   documents        Document[]
   projectExpenses  ProjectExpense[]
+  canvasScene      CanvasScene?
 
   @@index([userId, archivedAt])
 }
@@ -372,6 +373,30 @@ model ProjectCost {
   computedAt DateTime @default(now())
 
   @@index([projectId, computedAt])
+}
+
+/// The structured visual representation of a project (ARCHITECTURE §14).
+///
+/// One current scene per project. The scene is a PROJECTION of the approved
+/// specification plus layout detail — the spec remains the source of truth
+/// (PRD §9), so the scene records which spec version it was built from and is
+/// flagged as diverged rather than silently overriding an agreed dimension.
+model CanvasScene {
+  id        String  @id @default(uuid())
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Scene objects and canvas metadata. Structured JSON rather than a table per
+  /// object type: the shape is still evolving, and every read and write goes
+  /// through a validated schema in src/lib/canvas.
+  data Json
+
+  /// Approved spec version this scene was seeded from, so divergence is
+  /// detectable instead of assumed.
+  specVersionAtSeed Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// A one-off expense for a single project — crane hire, a permit, a subcontractor.

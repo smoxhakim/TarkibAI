@@ -19,6 +19,8 @@ import { listMaterials, listProjectMaterials } from '@/lib/materials/service';
 import { prisma } from '@/lib/db';
 import { CostPanel } from '@/components/CostPanel';
 import { getProjectCost, listExpenses } from '@/lib/calc/costs/service';
+import { CanvasPanel } from '@/components/CanvasPanel';
+import { getScene } from '@/lib/canvas/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,9 +67,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     listMaterials(user.id, { includeArchived: false }),
     prisma.costSettings.findUnique({ where: { userId: user.id } }),
   ]);
-  const [costView, expenses] = await Promise.all([
+  const [costView, expenses, sceneView] = await Promise.all([
     getProjectCost(project.id, user.id),
     listExpenses(project.id, user.id),
+    getScene(project.id, user.id),
   ]);
   const currency = costSettings?.currency ?? 'MAD';
   const aiConfigured = isAiConfigured();
@@ -122,6 +125,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             missing: spec.missing,
             complete: spec.complete,
           }}
+        />
+        <CanvasPanel
+          projectId={project.id}
+          view={{
+            objects: sceneView.scene.objects,
+            diverged: sceneView.diverged,
+            seedBlockedReason: sceneView.seedBlockedReason,
+          }}
+          materials={library.map((m) => ({ id: m.id, name: m.name }))}
         />
         <ProjectMaterialsPanel
           projectId={project.id}

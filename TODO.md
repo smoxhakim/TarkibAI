@@ -204,18 +204,29 @@ The system can calculate a project's internal cost and client-facing price witho
 
 # Phase 6 — Smart Canvas Foundation
 
-## T6 — Structured Smart Canvas
+## T6 — Structured Smart Canvas ✅ COMPLETE
 
-- [ ] Canvas architecture
-- [ ] Structured scene/project objects
-- [ ] Basic geometry primitives
-- [ ] Dimensions
-- [ ] Labels
-- [ ] Materials on objects
-- [ ] Object identifiers
-- [ ] Canvas state persistence
-- [ ] AI-to-canvas command foundation
-- [ ] Structured canvas updates
+- [x] Canvas architecture (`src/lib/canvas/`: schema, commands, render, service)
+- [x] Structured scene/project objects (panel, frame, lettering, light, note)
+- [x] Basic geometry primitives (integer millimetres, position, size, rotation)
+- [x] Dimensions (rendered annotations, per object)
+- [x] Labels (collision-aware placement)
+- [x] Materials on objects (linked to the user's library)
+- [x] Object identifiers (stable ids, addressable by AI commands)
+- [x] Canvas state persistence (CanvasScene, one per project)
+- [x] AI-to-canvas command foundation (validated command vocabulary + reducer)
+- [x] Structured canvas updates (add / update / remove, batched atomically)
+- [x] Divergence detection against the approved specification
+
+### Deferred out of T6 (deliberately)
+
+- [ ] Conversational editing — "zid 50cm f l3ard" is T7; the command layer it
+      will drive is built and tested
+- [ ] Drag-and-drop manipulation — precision editing by millimetre suits a
+      fabrication drawing, and drag code is not reusable by the AI path
+- [ ] Multi-view (front/side/top) — T11
+- [ ] Canvas snapshots in project versions — T15
+- [ ] Relationships between objects (parent/child, constraints)
 
 ### Definition of done
 
@@ -597,14 +608,33 @@ Completed:
 - [x] **T3 — User Material Library** (Phase 3)
 - [x] **T4 — Material Calculation** (Phase 4)
 - [x] **T5 — Cost Engine** (Phase 5)
+- [x] **T6 — Structured Smart Canvas** (Phase 6)
 
 Active milestone:
 
-- [ ] None. T6 has not been started.
+- [ ] None. T7 has not been started.
 
 Next milestone:
 
-- [ ] **T6 — Structured Smart Canvas** (Phase 6)
+- [ ] **T7 — Conversational Design Editing** (Phase 7)
+
+### T6 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 184 passed |
+| Integration tests | 80 passed against Neon |
+| Production build | passed, 32 routes |
+| Migrations | 9 applied |
+| Auth boundary | all canvas routes return JSON 401 |
+| Visual check | rendered a realistic scene and inspected it |
+
+The visual check found a defect no unit test could: labels on concentric objects
+(a panel, its frame, its lettering) were all centred and overlapped into
+unreadable text. Fixed with type-aware anchoring plus deterministic line
+stacking, and covered by regression tests.
 
 ### T5 verification record
 

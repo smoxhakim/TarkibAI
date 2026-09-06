@@ -8,6 +8,15 @@
   --color-line: oklch(91% 0.006 250);
   --color-accent: oklch(52% 0.17 255);
   --color-accent-ink: oklch(100% 0 0);
+
+  /* Canvas palette, referenced by the SVG renderer so a drawing follows the
+     app theme instead of hard-coding colours into generated markup. */
+  --canvas-panel: oklch(93% 0.02 250);
+  --canvas-lettering: oklch(87% 0.05 90);
+  --canvas-light: oklch(90% 0.09 90);
+  --canvas-ink: oklch(35% 0.02 250);
+  --canvas-muted: oklch(62% 0.02 250);
+  --canvas-accent: oklch(52% 0.17 255);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,6 +28,13 @@
     --color-line: oklch(30% 0.015 250);
     --color-accent: oklch(70% 0.14 255);
     --color-accent-ink: oklch(17% 0.015 250);
+
+    --canvas-panel: oklch(32% 0.02 250);
+    --canvas-lettering: oklch(45% 0.06 90);
+    --canvas-light: oklch(50% 0.09 90);
+    --canvas-ink: oklch(88% 0.01 250);
+    --canvas-muted: oklch(65% 0.02 250);
+    --canvas-accent: oklch(70% 0.14 255);
   }
 }
 
