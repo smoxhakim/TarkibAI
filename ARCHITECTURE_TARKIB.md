@@ -1455,6 +1455,15 @@ two scripts with French and English code-switching is a demanding multilingual
 task, and the dominant failure mode to avoid is inventing a dimension the user
 never gave.
 
+### DesignProposal
+
+- id, projectId, summary, commands (Json), specPatch (Json), status,
+  failureReason, createdAt, decidedAt
+
+A change to the design proposed by the agent, awaiting a human decision. Status
+is pending | approved | rejected | superseded. Decided rows are never deleted:
+together they are the design revision history.
+
 ### T2 — Project File Management (Phase 2)
 
 **Uploads go browser-to-R2, not through the API.** The server authorises an
@@ -1651,3 +1660,44 @@ unreadable overlap. Their labels are corner-anchored and pushed onto separate
 lines when they would collide; only objects whose label IS their content
 (lettering, lighting) are centred. This was found by rendering a realistic scene
 and looking at it — unit tests asserting valid SVG passed throughout.
+
+### T7 — Conversational Design Editing (Phase 7)
+
+**The agent proposes; it cannot apply.** There is no tool that mutates the
+canvas, and no tool that approves anything. `propose_design_change` writes a
+DesignProposal and returns a note stating plainly that nothing has changed yet,
+so the model does not report the edit as done. A test enumerates the toolbox and
+asserts no mutation or approval tool exists — that guarantee is structural, not
+a matter of prompt wording.
+
+**Every AI change is a proposal, including cosmetic ones.** The alternative —
+letting trivial edits through — requires the model to judge whether its own
+change is important, which is precisely the judgement PRD §5.4 says not to
+delegate. A uniform rule costs one click on a rename and removes a whole class
+of misclassification.
+
+**Relative changes are computed from real geometry.** "zid 50cm f l3ard" means
+current + 500 mm, so the agent must call `get_canvas` first. The prompt forbids
+guessing a current size, and the live evaluation asserts the resulting proposal
+contains 8500 mm for a panel that is actually 8000 mm.
+
+**Commands are validated twice: at proposal and at approval.** Validating early
+lets the agent see the error and correct itself conversationally. Validating
+again at approval matters because the scene may have changed in between — if the
+target object was deleted meanwhile, the proposal fails and records why rather
+than silently doing something else.
+
+**A pending proposal supersedes any earlier one.** Two competing pending changes
+to the same scene could be approved in an order that produces a result neither
+proposal described.
+
+**A dimensional change writes a new DRAFT specification.** Approving a proposal
+that carries a `specPatch` updates the canvas and creates a draft spec revision;
+it does not touch the approved one. An agreed dimension is a signed-off fact, so
+changing it passes back through spec approval — which is also what marks
+calculations, costs and documents stale downstream (PRD §24). Renaming or moving
+an object carries no patch, because layout is not an agreed project fact.
+
+**The proposal UI describes the COMMANDS, not the agent's prose.** The summary
+is model-written text; the change list is rendered from the commands that will
+actually execute. A user approving a change sees the real operation.

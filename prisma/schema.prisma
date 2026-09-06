@@ -101,6 +101,7 @@ model Project {
   documents        Document[]
   projectExpenses  ProjectExpense[]
   canvasScene      CanvasScene?
+  designProposals  DesignProposal[]
 
   @@index([userId, archivedAt])
 }
@@ -397,6 +398,44 @@ model CanvasScene {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// A change to the project's design proposed by the AI agent, awaiting the
+/// user's decision.
+///
+/// The agent has NO tool that mutates the canvas directly. It can only propose,
+/// and a proposal does nothing until a person approves it (PRD §5.4, §11). The
+/// same rows are the design revision history: an approved proposal records what
+/// changed, when, and why.
+model DesignProposal {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Plain-language description the user reads before deciding. Written by the
+  /// agent, but it is only ever text — the commands below are what execute.
+  summary String
+
+  /// Validated canvas commands. Applied only on approval, and re-validated then
+  /// so a scene that changed in the meantime cannot be corrupted.
+  commands Json
+
+  /// Optional specification patch for changes that alter an agreed project fact,
+  /// such as a dimension. Approving the proposal writes this as a new DRAFT spec
+  /// version; it still has to pass the normal spec approval before it counts.
+  specPatch Json?
+
+  /// pending | approved | rejected | superseded
+  status String @default("pending")
+
+  /// Set when applying failed, e.g. the target object was deleted meanwhile.
+  failureReason String?
+
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+
+  @@index([projectId, createdAt])
+  @@index([projectId, status])
 }
 
 /// A one-off expense for a single project — crane hire, a permit, a subcontractor.

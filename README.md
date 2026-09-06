@@ -247,6 +247,8 @@ src/
       projects/[id]/expenses/[expenseId]/  # DELETE
       projects/[id]/canvas/           # GET, POST (scene commands)
       projects/[id]/canvas/seed/      # POST — build from the approved spec
+      projects/[id]/design-proposals/ # GET — pending + history
+      projects/[id]/design-proposals/[proposalId]/  # POST — approve | reject
     cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
@@ -256,7 +258,7 @@ src/
                           # ChatPanel, SpecPanel, FilesPanel,
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
                           # ProjectMaterialRow, CostPanel, CostSettingsForm,
-                          # CanvasPanel
+                          # CanvasPanel, DesignProposalsPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -280,6 +282,7 @@ src/
       materials/          # deterministic material engine (pure) + persistence
       costs/              # deterministic cost engine + client-safe serializer
     canvas/               # scene schema, command reducer, SVG renderer, service
+    design/               # AI design proposals and the approval gate
     pdf/                  # (stub) Phase 13
     geometry/, mockup/    # (planned)
 
@@ -459,7 +462,7 @@ TARKIB is built progressively according to the roadmap in `TODO.md`.
 
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
 T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
-T6 Smart Canvas**
+T6 Smart Canvas · T7 Conversational Design Editing**
 
 Working end to end:
 
@@ -504,7 +507,13 @@ SVG from project data rather than generated as an image. It is built from the
 approved specification and flags itself when the specification moves on. The
 validated command layer behind it is what conversational editing will drive.
 
-**Next: T7 — Conversational Design Editing (Phase 7)**
+T7 adds: the Darija agent can read the canvas and propose structured changes —
+"zid 50cm f l3ard" becomes a concrete proposal computed from the panel's real
+width. Nothing is applied until you approve it; the agent has no tool that
+mutates the canvas or approves anything. A change to an agreed dimension writes
+a new draft specification rather than rewriting the approved one.
+
+**Next: T8 — Sheet Cutting Optimization (Phase 8)**
 
 Not yet implemented. The document panel remains explicitly labelled as unbuilt.
 Nothing in the product returns a fabricated number or a mocked AI reply.
