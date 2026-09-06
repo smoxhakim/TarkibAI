@@ -453,30 +453,42 @@ The structured spec should evolve over time while preserving backward compatibil
 - category
 - customCategory
 - supplier
-- standard dimensions
-- unit
-- thickness
-- unit price
+- measurementModel (linear | sheet | area | piece)
+- standardLengthMm, sheetWidthMm, sheetHeightMm — INTEGER millimetres
+- thicknessMm — Decimal(8,2)
+- unitPriceCents — price of one purchase unit, integer minor units
+- technicalProperties (Json)
 - notes
-- technical properties
+- archivedAt
 - createdAt
 - updatedAt
+
+Stock dimensions are integer millimetres, not free text. Purchase counts are
+derived from them, and a floating-point remainder can flip a division and change
+how many bars or sheets someone buys. Thickness is Decimal because real stock
+includes 0.5 mm and 3.5 mm.
+
+`measurementModel` decides which dimensions are required and what
+`unitPriceCents` buys: one bar, one sheet, one square metre, or one piece.
 
 ### ProjectMaterial
 
 - id
 - projectId
 - materialId
-- required quantity
-- required dimensions
-- units to purchase
-- purchased quantity
-- waste
-- price snapshot
-- total cost
-- manual override
+- role — what the material is for, in the user's words
+- requiredQuantity, requiredDimensions, unitsToPurchase, totalPurchasedQuantity,
+  wastePercent, unitPriceCentsSnapshot, totalCostCents, calculatedAt — all NULLABLE
+- manualOverride
 - createdAt
 - updatedAt
+
+A row means "this material is used on this project" — a selection, not a result.
+Every calculated field is null until the calculation engine runs, so the UI can
+say "not calculated yet" instead of displaying a zero nothing computed.
+
+Unique on (projectId, materialId): quantities belong in the fields above, not in
+duplicate rows.
 
 ### CuttingPlan
 
@@ -1474,3 +1486,31 @@ smuggled through a chat message into someone else's vision context.
 
 **A file that cannot be decoded is skipped, not fatal.** Losing one unreadable
 attachment is better than failing the user's whole message.
+
+### T3 — User Material Library (Phase 3)
+
+**Stock sizes are structured numbers, not text.** The starter stored
+`standardUnitSize` as a string like "2.44x1.22m". T4 must divide by these values
+to produce purchase counts, and a regex over user-typed text would silently
+mis-parse "2,44 x 1,22" or "244cm" into a wrong number of sheets. Replaced with
+integer millimetres per measurement model, validated so a linear material cannot
+be saved without a stock length.
+
+**Selection is separate from calculation.** ProjectMaterial's calculated columns
+were made nullable rather than zero-filled. Zero-filling would have put a real
+looking `0.00 MAD` in front of the user for something no engine had computed,
+which is exactly what PRD §5.3 forbids.
+
+**Materials are archived, not deleted, once used.** Deleting a material a project
+references would orphan the quotes and production documents that named it, so
+delete is refused with a 409 explaining that archiving is the right action.
+Archived materials stay out of pickers while remaining resolvable.
+
+**Changing the measurement model clears dimensions that no longer apply.** A
+material switched from sheet to linear must not retain sheet dimensions, or the
+cutting engine would later read stale geometry.
+
+**Prices are private.** The library holds the user's suppliers and purchase
+prices. Every query is scoped by the session-derived userId, and selecting a
+material into a project re-checks ownership so a project can never reference
+another user's pricing.

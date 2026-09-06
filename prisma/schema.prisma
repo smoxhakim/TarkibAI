@@ -163,41 +163,97 @@ model ProjectVersion {
 }
 
 model Material {
-  id               String   @id @default(uuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id])
-  name             String
-  category         String
-  customCategory   Boolean  @default(false)
-  supplier         String?
-  standardUnitSize String
-  unit             String // meter|sqm|sheet|piece
-  thickness        String?
-  unitPriceCents   Int
-  notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String  @id @default(uuid())
+  userId         String
+  user           User    @relation(fields: [userId], references: [id])
+  name           String
+  category       String
+  customCategory Boolean @default(false)
+  supplier       String?
+
+  /// How this material is measured and purchased, which decides which of the
+  /// dimension fields below apply and what unitPriceCents refers to.
+  /// linear | sheet | area | piece  (ARCHITECTURE §11)
+  measurementModel String
+
+  /// Standard stock dimensions in INTEGER MILLIMETRES.
+  ///
+  /// Integers, not floats: purchase counts are derived from these, and a
+  /// floating-point remainder can flip a division and change how many bars or
+  /// sheets someone buys. Millimetres cover every fabrication size exactly.
+  ///
+  /// linear -> standardLengthMm (e.g. a 6 m bar is 6000)
+  /// sheet  -> sheetWidthMm + sheetHeightMm (e.g. 2440 x 1220)
+  /// area   -> priced per m², no discrete stock size
+  /// piece  -> sold individually, no dimensions required
+  standardLengthMm Int?
+  sheetWidthMm     Int?
+  sheetHeightMm    Int?
+
+  /// Millimetres. Decimal because real stock includes 0.5 mm and 3.5 mm.
+  thicknessMm Decimal? @db.Decimal(8, 2)
+
+  /// Price of ONE purchase unit, in minor currency units of the user's
+  /// configured currency:
+  ///   linear -> one standard-length bar
+  ///   sheet  -> one sheet
+  ///   area   -> one square metre
+  ///   piece  -> one piece
+  unitPriceCents Int
+
+  /// Extensible domain properties (kerf, minimum usable remnant, finish, colour…).
+  /// Kept out of dedicated columns so industry-specific rules can be added
+  /// without reshaping the core entity (ARCHITECTURE §11).
+  technicalProperties Json?
+
+  notes String?
+
+  /// Archived rather than deleted once referenced by a project, so historical
+  /// calculations and quotes keep pointing at a material that still exists.
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   projectMaterials ProjectMaterial[]
   cuttingPlans     CuttingPlan[]
+
+  @@index([userId, archivedAt])
+  @@index([userId, category])
 }
 
 model ProjectMaterial {
-  id                     String   @id @default(uuid())
-  projectId              String
-  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  materialId             String
-  material               Material @relation(fields: [materialId], references: [id])
-  requiredQuantity       Decimal
-  requiredDimensions     String
-  unitsToPurchase        Int
-  totalPurchasedQuantity Decimal
-  wastePercent           Decimal
-  unitPriceCentsSnapshot Int
-  totalCostCents         Int
-  manualOverride         Boolean  @default(false)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id         String   @id @default(uuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id])
+
+  /// What the material is for on this project, in the user's own words.
+  role String?
+
+  /// Every field below is NULL until the T4 calculation engine runs.
+  ///
+  /// A row here means "this material is used on this project" — a selection,
+  /// not a result. Nullable rather than zero-filled so the UI can say "not
+  /// calculated yet" instead of displaying a 0 m² and 0.00 MAD that nothing
+  /// computed (PRD §5.3).
+  requiredQuantity       Decimal?
+  requiredDimensions     String?
+  unitsToPurchase        Int?
+  totalPurchasedQuantity Decimal?
+  wastePercent           Decimal?
+  unitPriceCentsSnapshot Int?
+  totalCostCents         Int?
+  calculatedAt           DateTime?
+
+  manualOverride Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  /// One row per material per project; quantities belong in the fields above,
+  /// not in duplicate rows.
+  @@unique([projectId, materialId])
+  @@index([projectId])
 }
 
 model CuttingPlan {

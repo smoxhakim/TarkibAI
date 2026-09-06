@@ -225,6 +225,7 @@ src/
     globals.css           # Tailwind 4 entry + theme tokens
     sign-in/, sign-up/    # Clerk hosted components
     dashboard/            # project list (+ loading, error states)
+    materials/            # material library (+ loading, error states)
     projects/[id]/        # project workspace (+ loading, not-found)
     api/
       projects/           # GET, POST
@@ -236,9 +237,15 @@ src/
       projects/[id]/files/[fileId]/          # DELETE
       projects/[id]/files/[fileId]/confirm/  # POST — verify the object landed
       projects/[id]/files/[fileId]/download/ # GET — redirect to a signed URL
+      projects/[id]/materials/       # GET, POST — project material selection
+      projects/[id]/materials/[projectMaterialId]/  # DELETE
+    materials/                       # GET, POST
+    materials/[id]/                  # GET, PATCH, DELETE
+    materials/categories/            # GET
 
   components/             # StatusBadge, NewProjectForm, ProjectActions,
-                          # ChatPanel, SpecPanel, FilesPanel
+                          # ChatPanel, SpecPanel, FilesPanel,
+                          # MaterialLibrary, MaterialForm, ProjectMaterialsPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -256,6 +263,7 @@ src/
       vision.ts           # downscale + inline images for the model
     spec/                 # schema, deterministic merge, completeness, service
     files/                # upload authorisation, confirmation, ownership
+    materials/            # library CRUD, search, project selection, formatting
     storage/              # R2 client, signed URLs, object-key construction
     calc/                 # (stub) Phase 4
     pdf/                  # (stub) Phase 13
@@ -435,7 +443,8 @@ Tracks the active development roadmap and milestone status.
 
 TARKIB is built progressively according to the roadmap in `TODO.md`.
 
-**Completed: T0 — Foundation, T1 — Darija AI Intake, T2 — File Management**
+**Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
+T3 Material Library**
 
 Working end to end:
 
@@ -457,11 +466,16 @@ uploads, signed short-lived downloads, attachment management in the project
 workspace, and image context for the agent. No URL is ever persisted; every
 read is authorised first.
 
-**Next: T3 — User Material Library (Phase 3)**
+T3 adds: a private material library with structured stock dimensions in integer
+millimetres, categories, suppliers, prices in integer minor units, search and
+filtering, and per-project material selection. Selected materials show "not
+calculated yet" rather than a zero, because no engine has computed them.
 
-Not yet implemented. Materials, calculations, and document panels remain
-explicitly labelled as unbuilt. Nothing in the product returns a fabricated
-number or a mocked AI reply.
+**Next: T4 — Material Calculation (Phase 4)**
+
+Not yet implemented. Calculation and document panels remain explicitly labelled
+as unbuilt. Nothing in the product returns a fabricated number or a mocked AI
+reply.
 
 A milestone is complete only when the functionality works end to end — not when
 UI files or API stubs exist.
