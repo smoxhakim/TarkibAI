@@ -174,20 +174,27 @@ An approved project produces deterministic material requirements and purchase qu
 
 # Phase 5 — Cost and Pricing
 
-## T5 — Cost Engine
+## T5 — Cost Engine ✅ COMPLETE
 
-- [ ] CostSettings UI
-- [ ] Material cost
-- [ ] Labor calculation
-- [ ] Transport calculation
-- [ ] Installation calculation
-- [ ] Other expense support
-- [ ] Profit margin
-- [ ] Tax
-- [ ] Internal total
-- [ ] Client total
-- [ ] Internal/client data separation
-- [ ] Cost calculation tests
+- [x] CostSettings UI (`/settings/costing`)
+- [x] Material cost (from the T4 calculation)
+- [x] Labor calculation (percent of materials | fixed | manual)
+- [x] Transport calculation
+- [x] Installation calculation
+- [x] Other expense support (ProjectExpense, per project)
+- [x] Profit margin (basis points, applied to the internal total)
+- [x] Tax (basis points, applied to the client subtotal)
+- [x] Internal total
+- [x] Client total
+- [x] Internal/client data separation (`toClientSafeCost`, built by construction)
+- [x] Cost calculation tests (26 engine unit tests, 15 integration tests)
+
+### Deferred out of T5 (deliberately)
+
+- [ ] Client-visible line items — the quote template decides how the total is
+      broken down for a client; that is T13
+- [ ] Per-project override of margin or tax — settings are per user for now
+- [ ] Cost history UI — every calculation is stored, but only the latest is shown
 
 ### Definition of done
 
@@ -589,14 +596,31 @@ Completed:
 - [x] **T2 — Project File Management** (Phase 2)
 - [x] **T3 — User Material Library** (Phase 3)
 - [x] **T4 — Material Calculation** (Phase 4)
+- [x] **T5 — Cost Engine** (Phase 5)
 
 Active milestone:
 
-- [ ] None. T5 has not been started.
+- [ ] None. T6 has not been started.
 
 Next milestone:
 
-- [ ] **T5 — Cost Engine** (Phase 5)
+- [ ] **T6 — Structured Smart Canvas** (Phase 6)
+
+### T5 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 147 passed |
+| Integration tests | 69 passed against Neon |
+| Production build | passed, 29 routes |
+| Migrations | 8 applied |
+| Auth boundary | all cost routes return JSON 401; no figure leaks unauthenticated |
+
+The client-safe boundary is asserted twice — once on the pure serializer and
+once end to end through the database — including that a deliberately
+recognisable internal expense value never appears in the serialized payload.
 
 ### T4 verification record
 

@@ -226,6 +226,7 @@ src/
     sign-in/, sign-up/    # Clerk hosted components
     dashboard/            # project list (+ loading, error states)
     materials/            # material library (+ loading, error states)
+    settings/costing/     # private costing rules (+ loading, error states)
     projects/[id]/        # project workspace (+ loading, not-found)
     api/
       projects/           # GET, POST
@@ -240,6 +241,11 @@ src/
       projects/[id]/materials/       # GET, POST — project material selection
       projects/[id]/materials/[projectMaterialId]/  # PATCH (requirement), DELETE
       projects/[id]/calculate-materials/  # POST — run the deterministic engine
+      projects/[id]/costs/            # GET — internal breakdown
+      projects/[id]/costs/calculate/  # POST — compute the cost
+      projects/[id]/expenses/         # GET, POST
+      projects/[id]/expenses/[expenseId]/  # DELETE
+    cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
     materials/categories/            # GET
@@ -247,7 +253,7 @@ src/
   components/             # StatusBadge, NewProjectForm, ProjectActions,
                           # ChatPanel, SpecPanel, FilesPanel,
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
-                          # ProjectMaterialRow
+                          # ProjectMaterialRow, CostPanel, CostSettingsForm
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -268,7 +274,8 @@ src/
     materials/            # library CRUD, search, project selection, formatting
     storage/              # R2 client, signed URLs, object-key construction
     calc/
-      materials/          # deterministic engine (pure) + persistence service
+      materials/          # deterministic material engine (pure) + persistence
+      costs/              # deterministic cost engine + client-safe serializer
     pdf/                  # (stub) Phase 13
     canvas/, geometry/, mockup/   # (planned)
 
@@ -447,7 +454,7 @@ Tracks the active development roadmap and milestone status.
 TARKIB is built progressively according to the roadmap in `TODO.md`.
 
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
-T3 Material Library · T4 Material Calculation**
+T3 Material Library · T4 Material Calculation · T5 Cost Engine**
 
 Working end to end:
 
@@ -481,11 +488,15 @@ and flags results as stale when the spec, the material, or the requirement
 changes underneath them. Sheet counts are an explicitly labelled minimum until
 2D nesting arrives in T8.
 
-**Next: T5 — Cost Engine (Phase 5)**
+T5 adds: configurable costing rules in basis points, a deterministic engine
+turning material cost plus labour, transport, installation and per-project
+expenses into a private internal total, then margin and tax into a client price
+— with a serializer boundary that exposes only subtotal, tax and total.
 
-Not yet implemented. Cost and document panels remain explicitly labelled as
-unbuilt. Nothing in the product returns a fabricated number or a mocked AI
-reply.
+**Next: T6 — Structured Smart Canvas (Phase 6)**
+
+Not yet implemented. The document panel remains explicitly labelled as unbuilt.
+Nothing in the product returns a fabricated number or a mocked AI reply.
 
 A milestone is complete only when the functionality works end to end — not when
 UI files or API stubs exist.

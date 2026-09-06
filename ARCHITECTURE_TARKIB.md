@@ -337,16 +337,21 @@ The database should retain and extend the existing core entities.
 
 ### CostSettings
 
-One-to-one with User.
+One-to-one with User. Private business rules — they determine margin and never
+appear on anything a client sees.
 
-Fields include:
-
-- labor type/value
-- transport type/value
-- installation type/value
-- margin
-- tax
+- laborType / laborBp / laborCents
+- transportType / transportBp / transportCents
+- installType / installBp / installCents
+- marginBp
+- taxBp
 - currency
+
+Percentages are integer BASIS POINTS (1250 = 12.5%), the same discipline as
+storing money in minor units: exact integer arithmetic, but able to express the
+half-percents real pricing uses. `type` selects which field is read — `percent`
+reads the `Bp` field, `fixed` reads the `Cents` field, `manual` takes an amount
+entered per project.
 
 ### QuoteSettings
 
@@ -531,17 +536,21 @@ Future:
 
 ### ProjectCost
 
-- id
-- projectId
-- material cost
-- labor
-- transport
-- installation
-- internal total
-- margin
-- tax
-- client total
-- computedAt
+Internal, private:
+- materialsCostCents, laborCostCents, transportCostCents, installCostCents,
+  otherCostCents, internalTotalCents, marginCents
+
+Client-facing:
+- clientSubtotalCents, taxCents, clientTotalCents
+
+Also: settingsSnapshot (Json), materialsCalculatedAt, computedAt.
+
+### ProjectExpense
+
+- id, projectId, label, amountCents, createdAt
+
+A one-off internal expense for a single project — crane hire, a permit, a
+subcontractor. Feeds the internal total; never becomes a client line item.
 
 ### Document
 
@@ -1559,3 +1568,45 @@ calculated.
 **An unsupported line stores a reason and no numbers.** If stock dimensions are
 missing the engine refuses rather than guessing, and any previous result is
 cleared — a stale number beside an "unsupported" message is worse than none.
+
+### T5 — Cost Engine (Phase 5)
+
+**Order of operations is part of the contract.** materials + labour + transport
++ installation + other = internal total; × margin = margin; internal + margin =
+client subtotal; × tax = tax; subtotal + tax = client total. A different order
+gives a different number, so it is fixed and tested.
+
+**Percentage components apply to the MATERIAL cost, not a running subtotal.**
+Labour, transport and installation are therefore independent of one another and
+of the order they are applied in, which makes a breakdown checkable by hand. A
+compounding model would make the total depend on component ordering.
+
+**Percentages are basis points.** The starter stored whole integer percents,
+which cannot express a 12.5% margin or 7.5% transport. Basis points keep the
+arithmetic exact while allowing half-percents, and `applyBasisPoints` rounds
+half away from zero rather than toward positive infinity, so the helper stays
+correct if credits are ever introduced.
+
+**`toClientSafeCost` is built by construction, not by deletion.** It names the
+three safe fields explicitly instead of stripping unsafe ones from the internal
+object. Deletion is fragile — a field added to the breakdown later would leak by
+default. Construction means a new internal field is invisible to clients unless
+somebody deliberately adds it. A test asserts a polluted input still yields
+exactly three keys.
+
+**Costing requires calculated materials.** Every percentage is applied to the
+material cost, so costing without it would have no base. The route reports why
+rather than returning zeros.
+
+**Settings are snapshotted onto each ProjectCost**, so a breakdown stays
+explicable after the user changes their rules, and costs are flagged stale when
+materials are recalculated underneath them.
+
+**An arithmetic identity worth knowing:** at 25% margin with 20% tax, the margin
+and the tax are always numerically equal, because
+tax = (internal x 1.25) x 0.20 = internal x 0.25 = margin. This is not a bug,
+but it does mean value-based leak assertions need rates where the two differ.
+
+**Defaults are all zero.** A user who has not configured costing gets no margin
+and no labour rate, because inventing either would silently mis-price their
+first quote.

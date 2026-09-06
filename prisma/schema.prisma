@@ -31,19 +31,36 @@ model User {
   quoteSettings QuoteSettings?
 }
 
+/// A user's private costing rules. These are business secrets: they determine
+/// margin and never appear on anything a client sees.
 model CostSettings {
-  id             String @id @default(uuid())
-  userId         String @unique
-  user           User   @relation(fields: [userId], references: [id])
-  laborType      String @default("percent") // percent | fixed
-  laborValue     Int    @default(0)
-  transportType  String @default("manual") // percent | fixed | manual
-  transportValue Int    @default(0)
-  installType    String @default("percent")
-  installValue   Int    @default(0)
-  marginPercent  Int    @default(0)
-  taxPercent     Int    @default(0)
-  currency       String @default("MAD")
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  /// percent | fixed. "percent" reads the matching *Bp field as basis points
+  /// applied to the MATERIAL cost; "fixed" reads the *Cents field.
+  laborType  String @default("percent")
+  laborBp    Int    @default(0)
+  laborCents Int    @default(0)
+
+  /// percent | fixed | manual. "manual" means the amount is entered per project
+  /// rather than derived from a rule.
+  transportType  String @default("manual")
+  transportBp    Int    @default(0)
+  transportCents Int    @default(0)
+
+  installType  String @default("percent")
+  installBp    Int    @default(0)
+  installCents Int    @default(0)
+
+  /// Basis points: 1250 = 12.5%. Integer, so the arithmetic stays exact, while
+  /// still expressing the half-percents real pricing uses.
+  /// Margin applies to the internal total; tax applies to the client subtotal.
+  marginBp Int @default(0)
+  taxBp    Int @default(0)
+
+  currency String @default("MAD")
 }
 
 model QuoteSettings {
@@ -82,6 +99,7 @@ model Project {
   mockups          Mockup[]
   costs            ProjectCost[]
   documents        Document[]
+  projectExpenses  ProjectExpense[]
 
   @@index([userId, archivedAt])
 }
@@ -320,19 +338,53 @@ model Mockup {
   createdAt      DateTime @default(now())
 }
 
+/// A computed cost breakdown for one project.
+///
+/// Everything from materialsCostCents through marginCents is INTERNAL and must
+/// never reach a client document. Only clientSubtotalCents, taxCents and
+/// clientTotalCents are client-safe, and only via toClientSafeCost().
 model ProjectCost {
-  id                 String   @id @default(uuid())
-  projectId          String
-  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // ---- Internal, private ----
   materialsCostCents Int
   laborCostCents     Int
   transportCostCents Int
   installCostCents   Int
+  otherCostCents     Int @default(0)
   internalTotalCents Int
   marginCents        Int
-  taxCents           Int
-  clientTotalCents   Int
-  computedAt         DateTime @default(now())
+
+  // ---- Client-facing ----
+  clientSubtotalCents Int
+  taxCents            Int
+  clientTotalCents    Int
+
+  /// The rules and rounding in force when this was computed, so the breakdown
+  /// stays explicable after the user edits their cost settings.
+  settingsSnapshot Json?
+
+  /// Set when a material calculation changed after this cost was computed.
+  materialsCalculatedAt DateTime?
+
+  computedAt DateTime @default(now())
+
+  @@index([projectId, computedAt])
+}
+
+/// A one-off expense for a single project — crane hire, a permit, a subcontractor.
+/// Internal only; it feeds the internal total, never a client line item.
+model ProjectExpense {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label       String
+  amountCents Int
+  createdAt   DateTime @default(now())
+
+  @@index([projectId])
 }
 
 model Document {
