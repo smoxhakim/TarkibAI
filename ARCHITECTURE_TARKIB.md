@@ -495,20 +495,24 @@ say "not calculated yet" instead of displaying a zero nothing computed.
 Unique on (projectId, materialId): quantities belong in the fields above, not in
 duplicate rows.
 
+### CuttingPiece
+
+- id, projectId, materialId, label, widthMm, heightMm, quantity, allowRotation
+
+The individual pieces to cut. Stated by the user: how a facade divides into
+panels is a fabrication decision involving seams and joins that the system
+cannot infer from a total area.
+
 ### CuttingPlan
 
-- id
-- projectId
-- materialId
-- stock size
-- layoutData
-- waste
-- diagram URL
-- createdAt
+- id, projectId, materialId, sheetSizeLabel, layoutData (Json), sheetsUsed,
+  wastePercent, kerfMm, edgeMarginMm, diagramObjectKey, unplacedCount, createdAt
+
+Unique on (projectId, materialId): one current plan per material.
+`diagramObjectKey` is the R2 key of the rendered PNG, null when storage is not
+configured — the in-app SVG works regardless.
 
 Future:
-- kerf
-- margin
 - multiple stock sizes
 - linear-cut representation
 
@@ -1701,3 +1705,50 @@ an object carries no patch, because layout is not an agreed project fact.
 **The proposal UI describes the COMMANDS, not the agent's prose.** The summary
 is model-written text; the change list is rendered from the commands that will
 actually execute. A user approving a change sees the real operation.
+
+### T8 — Sheet Cutting Optimization (Phase 8)
+
+**Guillotine, not free nesting.** Every cut runs edge to edge across the region
+being divided, which is what a panel saw physically does. Free nesting packs
+tighter, but a free-nested layout cannot be produced on a panel saw at all,
+while a guillotine layout cuts fine on both a saw and a CNC router. The extra
+waste buys a plan every workshop can execute. The constraint lives in
+`splitFreeRect`, which divides a remainder with one straight cut into exactly
+two rectangles — never an L-shape.
+
+**Pieces are stated, not derived.** Nesting needs individual dimensions, which a
+total area cannot supply. Deriving them from canvas objects would mean deciding
+where to seam an oversized panel, a fabrication decision with joins and edges
+that the system has no basis to make. An oversized piece is reported as unplaced
+with its reason rather than split.
+
+**Kerf is modelled, not ignored.** Each cut consumes blade width, so a piece
+placed beside another needs its own width plus kerf. Two 1220 mm pieces fit a
+2440 mm sheet exactly with no kerf and need two sheets with a 4 mm blade —
+ignoring this is the classic way a plan that looks right on paper comes up short
+on the last piece.
+
+**Rotation respects grain.** Pieces carry `allowRotation`, false for material
+with a grain or print direction, where a 90° turn would spoil the piece.
+
+**Integer millimetres throughout**, as in the material and cost engines: a
+floating-point remainder deciding whether a piece "just fits" would change how
+many sheets are bought.
+
+**Incomplete plans are stored.** When some pieces cannot be placed, the plan is
+saved with the unplaced list and reasons. Refusing to store anything would lose
+the placements that did work; dropping the pieces silently would be far worse.
+
+**Offcuts are reported as usable rectangles**, largest first, so a workshop sees
+reusable material rather than treating the remainder as scrap.
+
+**Kerf and edge margin come from `Material.technicalProperties`**, the
+extensible field added in T3 for exactly this, with a per-plan override. The
+values used are snapshotted onto the plan.
+
+**A PNG is rasterised to R2 via sharp**, because the PDF renderer for production
+documents cannot lay out arbitrary SVG. Failure is non-fatal: the plan and its
+in-app SVG are the real output.
+
+This replaces T4's area-based estimate as the authoritative sheet count. T4's
+warning now points at the cutting plan rather than saying it does not exist.

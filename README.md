@@ -249,6 +249,9 @@ src/
       projects/[id]/canvas/seed/      # POST — build from the approved spec
       projects/[id]/design-proposals/ # GET — pending + history
       projects/[id]/design-proposals/[proposalId]/  # POST — approve | reject
+      projects/[id]/cutting-pieces/   # GET, POST
+      projects/[id]/cutting-pieces/[pieceId]/  # DELETE
+      projects/[id]/cutting-plan/     # GET, POST — guillotine nesting
     cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
@@ -258,7 +261,7 @@ src/
                           # ChatPanel, SpecPanel, FilesPanel,
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
                           # ProjectMaterialRow, CostPanel, CostSettingsForm,
-                          # CanvasPanel, DesignProposalsPanel
+                          # CanvasPanel, DesignProposalsPanel, CuttingPlanPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -281,6 +284,7 @@ src/
     calc/
       materials/          # deterministic material engine (pure) + persistence
       costs/              # deterministic cost engine + client-safe serializer
+      cutting/            # guillotine nesting engine, diagram renderer, service
     canvas/               # scene schema, command reducer, SVG renderer, service
     design/               # AI design proposals and the approval gate
     pdf/                  # (stub) Phase 13
@@ -462,7 +466,8 @@ TARKIB is built progressively according to the roadmap in `TODO.md`.
 
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
 T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
-T6 Smart Canvas · T7 Conversational Design Editing**
+T6 Smart Canvas · T7 Conversational Design Editing ·
+T8 Sheet Cutting Optimization**
 
 Working end to end:
 
@@ -513,7 +518,12 @@ width. Nothing is applied until you approve it; the agent has no tool that
 mutates the canvas or approves anything. A change to an agreed dimension writes
 a new draft specification rather than rewriting the approved one.
 
-**Next: T8 — Sheet Cutting Optimization (Phase 8)**
+T8 adds: guillotine sheet nesting with kerf, edge margin, rotation and multiple
+sheets, producing a visual cutting plan, real waste, and usable offcuts. Cuts run
+edge to edge so a panel saw can actually make them. Pieces too large for the
+sheet are reported rather than silently split.
+
+**Next: T9 — Linear Material Cutting (Phase 9)**
 
 Not yet implemented. The document panel remains explicitly labelled as unbuilt.
 Nothing in the product returns a fabricated number or a mocked AI reply.

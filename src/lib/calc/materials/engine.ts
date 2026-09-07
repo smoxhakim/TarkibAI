@@ -166,7 +166,7 @@ export function calculateMaterialLine(input: CalculationInput): CalculationResul
             // This is the honest caveat: area division assumes the pieces tile
             // the sheet perfectly, which real cutting never does.
             message:
-              'This is a MINIMUM sheet count based on total area. It assumes pieces nest perfectly with no offcuts. The real number of sheets comes from the cutting plan, which is not built yet.',
+              'This is a MINIMUM sheet count based on total area. It assumes pieces nest perfectly with no offcuts. For the real number of sheets, add the pieces to cut and generate a cutting plan.',
           },
         ],
       };

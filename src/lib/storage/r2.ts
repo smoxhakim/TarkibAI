@@ -105,6 +105,24 @@ export async function getObjectBytes(objectKey: string): Promise<Buffer> {
   return Buffer.from(await result.Body.transformToByteArray());
 }
 
+/**
+ * Writes an object from the server.
+ *
+ * Distinct from the presigned upload path, which exists so a browser can send
+ * large files directly. Generated artefacts — cutting diagrams, and later PDFs
+ * — are produced server-side and never pass through a browser at all.
+ */
+export async function putObject(
+  objectKey: string,
+  body: Buffer,
+  mimeType: string
+): Promise<void> {
+  const { client, bucket } = getClient();
+  await client.send(
+    new PutObjectCommand({ Bucket: bucket, Key: objectKey, Body: body, ContentType: mimeType })
+  );
+}
+
 export async function deleteObject(objectKey: string): Promise<void> {
   const { client, bucket } = getClient();
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }));
