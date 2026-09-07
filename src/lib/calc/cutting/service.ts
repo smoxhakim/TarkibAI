@@ -7,7 +7,14 @@ import { buildObjectKey } from '@/lib/storage/keys';
 import type { CuttingPiece, CuttingPlan } from '@/generated/prisma/client';
 import { calculateCuttingPlan, type CuttingResult } from './engine';
 import { renderCuttingPlan } from './render';
-import { readCutDefaults, type CuttingPieceInputPayload } from './schema';
+import { calculateLinearPlan, type LinearResult } from './linear';
+import { renderLinearPlan } from './linear-render';
+import {
+  readCutDefaults,
+  readMinUsableRemnant,
+  type CuttingPieceInputPayload,
+  type LinearCutInputPayload,
+} from './schema';
 
 /* -------------------------------------------------------------------------- */
 /* Pieces                                                                      */
@@ -81,7 +88,7 @@ function readResult(value: unknown): CuttingResult | null {
 export async function listPlans(projectId: string, userId: string): Promise<PlanView[]> {
   await assertProjectAccess(projectId, userId);
   const plans = await prisma.cuttingPlan.findMany({
-    where: { projectId },
+    where: { projectId, kind: 'sheet' },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -149,9 +156,10 @@ export async function calculatePlan(
   const plan = await prisma.cuttingPlan.upsert({
     where: { projectId_materialId: { projectId, materialId: input.materialId } },
     update: {
-      sheetSizeLabel: `${material.sheetWidthMm} × ${material.sheetHeightMm} mm`,
+      stockSizeLabel: `${material.sheetWidthMm} × ${material.sheetHeightMm} mm`,
+      kind: 'sheet',
       layoutData: result as unknown as object,
-      sheetsUsed: result.sheetsUsed,
+      stockUnitsUsed: result.sheetsUsed,
       wastePercent: result.wastePercent,
       kerfMm,
       edgeMarginMm,
@@ -161,9 +169,10 @@ export async function calculatePlan(
     create: {
       projectId,
       materialId: input.materialId,
-      sheetSizeLabel: `${material.sheetWidthMm} × ${material.sheetHeightMm} mm`,
+      stockSizeLabel: `${material.sheetWidthMm} × ${material.sheetHeightMm} mm`,
+      kind: 'sheet',
       layoutData: result as unknown as object,
-      sheetsUsed: result.sheetsUsed,
+      stockUnitsUsed: result.sheetsUsed,
       wastePercent: result.wastePercent,
       kerfMm,
       edgeMarginMm,
@@ -186,7 +195,7 @@ export async function calculatePlan(
 async function renderDiagramToStorage(
   projectId: string,
   userId: string,
-  materialId: string,
+  diagramId: string,
   svg: string
 ): Promise<string | null> {
   if (!svg || !isStorageConfigured()) return null;
@@ -201,7 +210,7 @@ async function renderDiagramToStorage(
     const objectKey = buildObjectKey({
       userId,
       projectId,
-      fileId: `cutting-${materialId}`,
+      fileId: `cutting-${diagramId}`,
       category: 'cutting-plans',
       mimeType: 'image/png',
     });
@@ -212,4 +221,158 @@ async function renderDiagramToStorage(
     console.error('[cutting] could not render the plan diagram to PNG', error);
     return null;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Linear cuts                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export async function listLinearCuts(projectId: string, userId: string) {
+  await assertProjectAccess(projectId, userId);
+  return prisma.linearCut.findMany({ where: { projectId }, orderBy: { createdAt: 'asc' } });
+}
+
+export async function addLinearCut(
+  projectId: string,
+  userId: string,
+  input: LinearCutInputPayload
+) {
+  await assertProjectAccess(projectId, userId);
+  const material = await assertMaterialAccess(input.materialId, userId);
+
+  if (material.measurementModel !== 'linear') {
+    throw badRequest('Cut lists apply to linear stock — bars, tubes and profiles.');
+  }
+
+  await prisma.linearCut.create({
+    data: {
+      projectId,
+      materialId: input.materialId,
+      label: input.label ?? null,
+      lengthMm: input.lengthMm,
+      quantity: input.quantity,
+    },
+  });
+
+  return listLinearCuts(projectId, userId);
+}
+
+export async function removeLinearCut(projectId: string, userId: string, cutId: string) {
+  await assertProjectAccess(projectId, userId);
+  const row = await prisma.linearCut.findUnique({ where: { id: cutId } });
+  if (!row || row.projectId !== projectId) throw notFound('Cut');
+  await prisma.linearCut.delete({ where: { id: row.id } });
+}
+
+export type LinearPlanView = {
+  plan: CuttingPlan | null;
+  result: LinearResult | null;
+  svg: string;
+};
+
+function readLinearResult(value: unknown): LinearResult | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Partial<LinearResult>;
+  if (!Array.isArray(record.bars) || !record.settings) return null;
+  return record as LinearResult;
+}
+
+export async function listLinearPlans(projectId: string, userId: string): Promise<LinearPlanView[]> {
+  await assertProjectAccess(projectId, userId);
+  const plans = await prisma.cuttingPlan.findMany({
+    where: { projectId, kind: 'linear' },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return plans.map((plan) => {
+    const result = readLinearResult(plan.layoutData);
+    return { plan, result, svg: result ? renderLinearPlan(result) : '' };
+  });
+}
+
+/**
+ * Computes and stores the cut plan for one linear material.
+ *
+ * This is the authoritative bar count. The T4 material calculation divides total
+ * length by bar length, which under-counts whenever cut lengths do not pack
+ * neatly, and now says so.
+ */
+export async function calculateLinearCutPlan(
+  projectId: string,
+  userId: string,
+  input: { materialId: string; kerfMm?: number; minUsableRemnantMm?: number }
+): Promise<LinearPlanView> {
+  await assertProjectAccess(projectId, userId);
+  const material = await assertMaterialAccess(input.materialId, userId);
+
+  if (material.measurementModel !== 'linear') {
+    throw badRequest('This material is not linear stock.');
+  }
+  if (!material.standardLengthMm) {
+    throw badRequest('This material has no standard bar length, so a cut plan cannot be computed.');
+  }
+
+  const cuts = await prisma.linearCut.findMany({
+    where: { projectId, materialId: input.materialId },
+  });
+  if (cuts.length === 0) {
+    throw badRequest('Add the cut lengths for this material before generating a plan.');
+  }
+
+  const defaults = readCutDefaults(material.technicalProperties);
+  const kerfMm = input.kerfMm ?? defaults.kerfMm;
+  const minUsableRemnantMm =
+    input.minUsableRemnantMm ?? readMinUsableRemnant(material.technicalProperties);
+
+  const result = calculateLinearPlan(
+    cuts.map((row) => ({
+      id: row.id,
+      label: row.label,
+      lengthMm: row.lengthMm,
+      quantity: row.quantity,
+    })),
+    { stockLengthMm: material.standardLengthMm, kerfMm, minUsableRemnantMm }
+  );
+
+  const svg = renderLinearPlan(result);
+  const diagramObjectKey = await renderDiagramToStorage(
+    projectId,
+    userId,
+    `linear-${input.materialId}`,
+    svg
+  );
+
+  const unplacedCount = result.unplaced.reduce((sum, row) => sum + row.quantity, 0);
+  const stockLabel = `${Number((material.standardLengthMm / 1000).toFixed(3))} m bar`;
+
+  const plan = await prisma.cuttingPlan.upsert({
+    where: { projectId_materialId: { projectId, materialId: input.materialId } },
+    update: {
+      kind: 'linear',
+      stockSizeLabel: stockLabel,
+      layoutData: result as unknown as object,
+      stockUnitsUsed: result.barsUsed,
+      wastePercent: result.wastePercent,
+      kerfMm,
+      edgeMarginMm: 0,
+      diagramObjectKey,
+      unplacedCount,
+    },
+    create: {
+      projectId,
+      materialId: input.materialId,
+      kind: 'linear',
+      stockSizeLabel: stockLabel,
+      layoutData: result as unknown as object,
+      stockUnitsUsed: result.barsUsed,
+      wastePercent: result.wastePercent,
+      kerfMm,
+      // Edge margin has no meaning for linear stock.
+      edgeMarginMm: 0,
+      diagramObjectKey,
+      unplacedCount,
+    },
+  });
+
+  return { plan, result, svg };
 }

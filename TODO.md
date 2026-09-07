@@ -300,17 +300,18 @@ A project with supported sheet materials can produce a visual cutting plan with 
 
 # Phase 9 — Advanced Material Optimization
 
-## T9 — Linear Material Cutting
+## T9 — Linear Material Cutting ✅ COMPLETE
 
-- [ ] Linear material rules
-- [ ] Standard bar/profile sizes
-- [ ] Cut lengths
-- [ ] Kerf
-- [ ] Remnants
-- [ ] Bar utilization
-- [ ] Linear waste
-- [ ] Visual cut sequence
-- [ ] Linear optimization tests
+- [x] Linear material rules (linear stock only; sheet is T8)
+- [x] Standard bar/profile sizes (from Material.standardLengthMm)
+- [x] Cut lengths (LinearCut model, stated by the user)
+- [x] Kerf (charged between cuts, not after the last)
+- [x] Remnants (usable above a threshold, otherwise scrap)
+- [x] Bar utilization (per bar, percentage)
+- [x] Linear waste (kerf plus unusable tails)
+- [x] Visual cut sequence (deterministic SVG, one strip per bar)
+- [x] Linear optimization tests (18 engine + 7 render unit tests, 9 integration)
+- [x] **Fix: T4's linear bar count is no longer presented as exact**
 
 Supported examples:
 
@@ -630,14 +631,34 @@ Completed:
 - [x] **T6 — Structured Smart Canvas** (Phase 6)
 - [x] **T7 — Conversational Design Editing** (Phase 7)
 - [x] **T8 — Sheet Cutting Optimization** (Phase 8)
+- [x] **T9 — Linear Material Cutting** (Phase 9)
 
 Active milestone:
 
-- [ ] None. T9 has not been started.
+- [ ] None. T10 has not been started.
 
 Next milestone:
 
-- [ ] **T9 — Linear Material Cutting** (Phase 9)
+- [ ] **T10 — Material Efficiency Recommendations** (Phase 10)
+
+### T9 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 231 passed |
+| Integration tests | 115 passed against Neon |
+| Production build | passed, 41 routes |
+| Migrations | 12 applied |
+| Auth boundary | all linear routes return JSON 401 |
+| Visual check | rendered a 5-bar mixed cut plan and inspected it |
+
+**A real bug in shipped T4 code was found and fixed during this milestone.** Its
+linear calculation divided total length by bar length and presented the result
+as exact. Four 4 m pieces from 6 m bars needs four bars; T4 said three, with no
+warning. It now carries the same MINIMUM caveat as the sheet path and names the
+case. The bar cut plan is the authoritative count.
 
 ### T8 verification record
 

@@ -503,10 +503,25 @@ The individual pieces to cut. Stated by the user: how a facade divides into
 panels is a fabrication decision involving seams and joins that the system
 cannot infer from a total area.
 
+### LinearCut
+
+- id, projectId, materialId, label, lengthMm, quantity
+
+A required cut length for bar, tube or profile stock. The 1D counterpart of
+CuttingPiece, kept separate rather than reusing a height field that would be
+meaningless — a bar cut has one dimension, and pretending otherwise invites a
+wrong number into the optimiser.
+
 ### CuttingPlan
 
-- id, projectId, materialId, sheetSizeLabel, layoutData (Json), sheetsUsed,
-  wastePercent, kerfMm, edgeMarginMm, diagramObjectKey, unplacedCount, createdAt
+- id, projectId, materialId, kind (sheet | linear), stockSizeLabel,
+  layoutData (Json), stockUnitsUsed, wastePercent, kerfMm, edgeMarginMm,
+  diagramObjectKey, unplacedCount, createdAt
+
+One plan per material, and a material is either sheet or linear. Columns were
+renamed from the sheet-specific `sheetSizeLabel`/`sheetsUsed` in T9: leaving
+sheet vocabulary on a table holding bar plans would have been permanently
+misleading.
 
 Unique on (projectId, materialId): one current plan per material.
 `diagramObjectKey` is the R2 key of the rendered PNG, null when storage is not
@@ -1752,3 +1767,45 @@ in-app SVG are the real output.
 
 This replaces T4's area-based estimate as the authoritative sheet count. T4's
 warning now points at the cutting plan rather than saying it does not exist.
+
+### T9 — Linear Material Cutting (Phase 9)
+
+**A length division under-counts bars, and T4 was presenting it as exact.**
+Found while building this milestone: four 4 m pieces from 6 m bars is 16 m of
+material, which divides to three bars — but only ONE 4 m piece fits per bar, so
+four are needed. T4's linear result had `warnings: []`, so the material panel
+showed a bar count that could be too low with nothing saying so. Under-buying
+stops a job mid-fabrication. T4 now carries the same MINIMUM caveat the sheet
+path has and names this exact case.
+
+The T4 test suite did not catch it because it asserted the purchased *length*
+was never less than required, which is true — the flaw is that the length is not
+usable in the required cut sizes.
+
+**First Fit Decreasing.** Cuts are sorted longest first and placed into the
+first bar with room. FFD is the standard heuristic for one-dimensional cutting
+stock, is deterministic, and is provably within 11/9 of optimal plus a constant
+— a gap smaller than the variation between real saw operators.
+
+**Kerf is charged between cuts, not after the last one.** A cut only needs blade
+clearance when material follows it on the bar. Charging unconditionally would
+waste a blade width per bar and inflate the bar count.
+
+**A remnant worth keeping is stock, not waste.** Tails at or above
+`minUsableRemnantMm` (from the material's technical properties) are reported as
+reusable and excluded from the waste figure; shorter ends are scrap. Counting a
+keepable 2 m tail as waste would overstate what a job actually costs.
+
+**Cuts longer than a bar are refused, not spliced.** Joining two bars to make one
+long piece is a decision about joints and structural strength, not an
+optimisation.
+
+**Sheet and linear plans share one table, discriminated by `kind`.** Each
+listing filters on it, because the two `layoutData` shapes are entirely
+different and cross-contamination would surface as a rendering failure.
+
+**Caption overflow is handled deterministically.** A 600 mm cut is a narrow box;
+a label wider than its segment spills over the neighbour and both become
+unreadable. The caption degrades from full label, to length alone, to nothing.
+Found by rendering a realistic plan and looking at it — the same way the T6
+label defect surfaced.

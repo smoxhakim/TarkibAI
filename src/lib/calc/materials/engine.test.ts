@@ -222,3 +222,22 @@ describe('input guards', () => {
     }
   });
 });
+
+describe('linear estimates are labelled as minimums', () => {
+  it('warns that a length division can under-count bars', () => {
+    const result = expectSupported(calculateMaterialLine(linear()));
+    // Found while building T9: dividing total length by bar length under-counts
+    // whenever cut lengths do not pack neatly, and this path previously
+    // presented its answer as exact.
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].code).toBe('linear_packing_estimate');
+    expect(result.warnings[0].message).toContain('MINIMUM');
+  });
+
+  it('names the concrete case where the division is wrong', () => {
+    // 16 m of 4 m pieces from 6 m bars: the division says 3, reality is 4.
+    const result = expectSupported(calculateMaterialLine(linear({ requiredQuantity: 16 })));
+    expect(result.unitsToPurchase).toBe(3);
+    expect(result.warnings[0].message).toContain('four 4 m pieces need four 6 m bars');
+  });
+});

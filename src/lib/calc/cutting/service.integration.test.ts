@@ -183,7 +183,7 @@ describe('plan calculation', () => {
     });
 
     const view = await calculatePlan(project.id, ownerId, { materialId: sheetMaterialId });
-    expect(view.plan?.sheetsUsed).toBeGreaterThan(0);
+    expect(view.plan?.stockUnitsUsed).toBeGreaterThan(0);
     expect(Number(view.plan?.wastePercent)).toBeGreaterThanOrEqual(0);
     expect(view.svg).toContain('<svg');
     expect(view.result?.sheets[0].pieces.length).toBeGreaterThan(0);
@@ -213,7 +213,7 @@ describe('plan calculation', () => {
     expect(view.plan?.unplacedCount).toBe(1);
     expect(view.result?.unplaced[0].reason).toContain('Larger than the usable sheet area');
     // The pieces that do fit are still planned.
-    expect(view.plan?.sheetsUsed).toBe(1);
+    expect(view.plan?.stockUnitsUsed).toBe(1);
   });
 
   it('replaces the previous plan for the same material rather than duplicating', async () => {
