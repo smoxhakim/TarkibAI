@@ -417,6 +417,14 @@ npm install
 npm run prisma:migrate
 ```
 
+**Restart `next dev` after a migration.** `src/lib/db.ts` caches the Prisma
+client on `globalThis` in development, so that a hot reload does not open a new
+Neon connection pool each time. A migration regenerates the client, but the
+cached *instance* is still the one built from the previous schema — so a model
+added by the migration surfaces as
+`Cannot read properties of undefined (reading 'findMany')` until the server is
+restarted. Nothing is wrong with the code when this happens.
+
 ## 3. Run
 
 ```bash
