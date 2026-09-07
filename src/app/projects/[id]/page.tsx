@@ -23,6 +23,9 @@ import { CanvasPanel } from '@/components/CanvasPanel';
 import { getScene } from '@/lib/canvas/service';
 import { DesignProposalsPanel } from '@/components/DesignProposalsPanel';
 import { listProposals } from '@/lib/design/service';
+import { CuttingPlanPanel } from '@/components/CuttingPlanPanel';
+import { listPieces, listPlans } from '@/lib/calc/cutting/service';
+import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,12 +72,23 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     listMaterials(user.id, { includeArchived: false }),
     prisma.costSettings.findUnique({ where: { userId: user.id } }),
   ]);
-  const [costView, expenses, sceneView, proposals] = await Promise.all([
-    getProjectCost(project.id, user.id),
-    listExpenses(project.id, user.id),
-    getScene(project.id, user.id),
-    listProposals(project.id, user.id),
-  ]);
+  const [costView, expenses, sceneView, proposals, cuttingPieces, cuttingPlans] =
+    await Promise.all([
+      getProjectCost(project.id, user.id),
+      listExpenses(project.id, user.id),
+      getScene(project.id, user.id),
+      listProposals(project.id, user.id),
+      listPieces(project.id, user.id),
+      listPlans(project.id, user.id),
+    ]);
+
+  // Cutting applies to sheet stock only; linear optimisation is a later phase.
+  const sheetMaterials = projectMaterials
+    .map((row) => library.find((material) => material.id === row.materialId))
+    .filter(
+      (material): material is NonNullable<typeof material> =>
+        material !== undefined && material.measurementModel === 'sheet'
+    );
   const currency = costSettings?.currency ?? 'MAD';
   const aiConfigured = isAiConfigured();
   const storageConfigured = isStorageConfigured();
@@ -159,6 +173,46 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,
           }))}
           library={library.map((m) => ({ id: m.id, name: m.name, category: m.category }))}
+        />
+        <CuttingPlanPanel
+          projectId={project.id}
+          sheetMaterials={sheetMaterials.map((material) => ({
+            id: material.id,
+            name: material.name,
+            sheetLabel: formatStockSize({
+              measurementModel: material.measurementModel,
+              standardLengthMm: material.standardLengthMm,
+              sheetWidthMm: material.sheetWidthMm,
+              sheetHeightMm: material.sheetHeightMm,
+              thicknessMm: material.thicknessMm === null ? null : Number(material.thicknessMm),
+            }) ?? '—',
+          }))}
+          pieces={cuttingPieces.map((piece) => ({
+            id: piece.id,
+            materialId: piece.materialId,
+            label: piece.label,
+            widthMm: piece.widthMm,
+            heightMm: piece.heightMm,
+            quantity: piece.quantity,
+            allowRotation: piece.allowRotation,
+          }))}
+          plans={cuttingPlans
+            .filter((entry) => entry.plan !== null)
+            .map((entry) => ({
+              materialId: entry.plan!.materialId,
+              sheetSizeLabel: entry.plan!.sheetSizeLabel,
+              sheetsUsed: entry.plan!.sheetsUsed,
+              wastePercent: entry.plan!.wastePercent.toString(),
+              kerfMm: entry.plan!.kerfMm,
+              edgeMarginMm: entry.plan!.edgeMarginMm,
+              unplacedCount: entry.plan!.unplacedCount,
+              svg: entry.svg,
+              unplaced: entry.result?.unplaced ?? [],
+              offcutCount: (entry.result?.sheets ?? []).reduce(
+                (sum, sheet) => sum + sheet.offcuts.length,
+                0
+              ),
+            }))}
         />
         <CostPanel
           projectId={project.id}

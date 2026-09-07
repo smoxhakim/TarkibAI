@@ -269,19 +269,28 @@ and the application can safely update the structured project representation.
 
 # Phase 8 — Cutting Optimization
 
-## T8 — Sheet Cutting Optimization
+## T8 — Sheet Cutting Optimization ✅ COMPLETE
 
-- [ ] Sheet material rules
-- [ ] 2D nesting
-- [ ] Rotation
-- [ ] Margins
-- [ ] Kerf support
-- [ ] Multiple sheets
-- [ ] Waste percentage
-- [ ] CuttingPlan model
-- [ ] SVG cutting diagram
-- [ ] PNG rendering
-- [ ] Cutting-plan UI
+- [x] Sheet material rules (sheet stock only; linear is T9)
+- [x] 2D nesting (guillotine, best-area-fit, largest piece first)
+- [x] Rotation (per piece, off for grain-directional material)
+- [x] Margins (edge trim excluded from usable area)
+- [x] Kerf support (blade width consumed by every cut)
+- [x] Multiple sheets
+- [x] Waste percentage (against full purchased area)
+- [x] CuttingPiece + CuttingPlan models
+- [x] SVG cutting diagram (deterministic, per sheet)
+- [x] PNG rendering (sharp → R2, for later PDF use)
+- [x] Cutting-plan UI
+- [x] Usable offcuts reported, largest first
+
+### Deferred out of T8 (deliberately)
+
+- [ ] Linear stock optimisation — T9
+- [ ] Multiple stock sizes for one material (compare a 3 m vs 4 m sheet)
+- [ ] Offcut reuse across projects
+- [ ] Feeding the real sheet count back into the T4 material calculation —
+      the plan is authoritative but the two are not yet linked
 
 ### Definition of done
 
@@ -620,14 +629,31 @@ Completed:
 - [x] **T5 — Cost Engine** (Phase 5)
 - [x] **T6 — Structured Smart Canvas** (Phase 6)
 - [x] **T7 — Conversational Design Editing** (Phase 7)
+- [x] **T8 — Sheet Cutting Optimization** (Phase 8)
 
 Active milestone:
 
-- [ ] None. T8 has not been started.
+- [ ] None. T9 has not been started.
 
 Next milestone:
 
-- [ ] **T8 — Sheet Cutting Optimization** (Phase 8)
+- [ ] **T9 — Linear Material Cutting** (Phase 9)
+
+### T8 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 204 passed |
+| Integration tests | 105 passed against Neon |
+| Production build | passed, 38 routes |
+| Migrations | 11 applied |
+| Auth boundary | all cutting routes return JSON 401 |
+| Visual check | rendered a 3-sheet mixed layout and inspected it |
+
+The engine tests assert the two invariants that matter physically: no two placed
+pieces ever overlap, and every piece sits inside the sheet after edge margin.
 
 ### T7 verification record
 
