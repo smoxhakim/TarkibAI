@@ -324,15 +324,26 @@ Supported examples:
 
 # Phase 10 — Waste Reduction Intelligence
 
-## T10 — Material Efficiency Recommendations
+## T10 — Material Efficiency Recommendations ✅ COMPLETE
 
-- [ ] Detect waste opportunities
-- [ ] Compare alternative standard sizes
-- [ ] Compare material options
-- [ ] Suggest purchasing alternatives
-- [ ] Explain expected savings
-- [ ] Require user approval
-- [ ] Recalculate after approval
+- [x] Detect waste opportunities (re-runs the real cutting engines)
+- [x] Compare alternative standard sizes (sheet and bar)
+- [x] Compare material options (from the user's own library only)
+- [x] Suggest purchasing alternatives
+- [x] Explain expected savings (cost, stock units, waste points)
+- [x] Require user approval (applying is an explicit click; nothing is automatic)
+- [x] Recalculate after approval (pieces reassigned, stale plan and figures cleared)
+- [x] Read-only AI tool so the agent can explain savings in Darija
+
+### Deferred out of T10 (deliberately)
+
+- [ ] Hypothetical stock sizes the user does not carry — would invent supplier
+      availability
+- [ ] Cross-project offcut reuse
+- [ ] Suggesting a cheaper material of a *different* specification (thinner,
+      different alloy) — that is a fabrication judgement, not arithmetic
+- [ ] Applying a rotation recommendation automatically — the user decides whether
+      the material truly has no grain
 
 The AI may suggest alternatives, but deterministic engines must calculate the actual result.
 
@@ -340,19 +351,28 @@ The AI may suggest alternatives, but deterministic engines must calculate the ac
 
 # Phase 11 — Technical Drawing System
 
-## T11 — Structured Technical Drawings
+## T11 — Structured Technical Drawings ✅ COMPLETE
 
-- [ ] Drawing domain model
-- [ ] Front view
-- [ ] Side view
-- [ ] Top view
-- [ ] Back view
-- [ ] Sections
-- [ ] Dimension annotations
-- [ ] Material annotations
-- [ ] Component labels
-- [ ] SVG renderer
-- [ ] Drawing versioning
+- [x] Drawing domain model (projection layer + issued Diagram records)
+- [x] Front view
+- [x] Side view (needs per-part depth; says so when absent)
+- [x] Top view (needs per-part depth; says so when absent)
+- [x] Back view (mirrored, which matters for fixings and cable exits)
+- [ ] **Sections — deliberately not implemented**, see below
+- [x] Dimension annotations (overall, per view, with the axis named)
+- [x] Material annotations (in the per-view legend)
+- [x] Component labels (numbered callouts + legend)
+- [x] SVG renderer (pure and deterministic)
+- [x] Drawing versioning (live render + explicitly issued snapshots)
+
+### Deferred out of T11 (deliberately)
+
+- [ ] **Section views** — a section needs a cut plane and knowledge of internal
+      construction the scene does not hold. Drawing one would mean inventing
+      internal structure. Revisit when the geometry can support it.
+- [ ] Per-part dimension annotations (only overall dimensions are annotated)
+- [ ] Exploded and assembly views
+- [ ] Scale bars and standard sheet sizes (A3/A4)
 
 ### Definition of done
 
@@ -632,14 +652,51 @@ Completed:
 - [x] **T7 — Conversational Design Editing** (Phase 7)
 - [x] **T8 — Sheet Cutting Optimization** (Phase 8)
 - [x] **T9 — Linear Material Cutting** (Phase 9)
+- [x] **T10 — Material Efficiency Recommendations** (Phase 10)
+- [x] **T11 — Structured Technical Drawings** (Phase 11)
 
 Active milestone:
 
-- [ ] None. T10 has not been started.
+- [ ] None. T12 has not been started.
 
 Next milestone:
 
-- [ ] **T10 — Material Efficiency Recommendations** (Phase 10)
+- [ ] **T12 — AI Mockups** (Phase 12)
+
+### T11 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 280 passed |
+| Integration tests | 138 passed against Neon |
+| Production build | passed, 45 routes |
+| Migrations | 13 applied |
+| Auth boundary | drawing routes return JSON 401 |
+| Visual check | rendered a 4-view sheet and inspected it twice |
+
+The visual check found two defects no unit test caught: labels colliding on
+concentric parts, and a top view whose extreme aspect ratio left no room for text
+at all. Both were fixed by moving to numbered callouts with a legend, and the
+callout positions are themselves collision-stacked.
+
+### T10 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 248 passed |
+| Integration tests | 126 passed against Neon |
+| Production build | passed, 43 routes |
+| Migrations | 12 applied (no schema change needed) |
+| Auth boundary | recommendation routes return JSON 401 |
+
+No migration was required: recommendations are computed, not stored. The tests
+assert the invariant that matters commercially — every recommendation strictly
+reduces cost, and a candidate that cannot produce every piece is never offered
+however cheap it is.
 
 ### T9 verification record
 

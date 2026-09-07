@@ -4,6 +4,7 @@ import { getSpec, updateDraftSpec } from '@/lib/spec/service';
 import { getScene } from '@/lib/canvas/service';
 import { sceneCommandSchema } from '@/lib/canvas/schema';
 import { createProposal } from '@/lib/design/service';
+import { getRecommendations } from '@/lib/calc/efficiency/service';
 
 /**
  * The agent's tool surface.
@@ -210,6 +211,21 @@ export function buildToolbox(projectId: string, userId: string): ToolDefinition[
           objects: view.scene.objects,
           diverged: view.diverged,
           seedBlockedReason: view.seedBlockedReason,
+        };
+      },
+    },
+    {
+      name: 'get_material_recommendations',
+      description:
+        'Read material efficiency recommendations for this project: cheaper stock sizes from the user\'s own material library, with the real saving in sheets or bars, waste and cost. These are COMPUTED by the cutting engines — report the numbers exactly as given and never estimate a saving yourself. You cannot apply one; the user applies it in the interface.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      execute: async (rawArgs) => {
+        emptyObjectSchema.parse(rawArgs ?? {});
+        const result = await getRecommendations(projectId, userId);
+        return {
+          recommendations: result.recommendations,
+          emptyReason: result.emptyReason,
+          note: 'Computed by the cutting engines. Report these figures exactly; do not calculate your own. The user applies a recommendation in the interface.',
         };
       },
     },
