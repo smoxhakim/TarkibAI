@@ -40,6 +40,8 @@ import { isMockupConfigured } from '@/lib/mockup/provider';
 import { getRecommendations } from '@/lib/calc/efficiency/service';
 import { QuotesPanel } from '@/components/QuotesPanel';
 import { getQuoteView, listQuotes } from '@/lib/quotes/service';
+import { ProductionPanel } from '@/components/ProductionPanel';
+import { getProductionView } from '@/lib/production/service';
 import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
@@ -103,9 +105,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     renderLiveDrawing(project.id, user.id),
     listIssuedDrawings(project.id, user.id),
   ]);
-  const [mockups, quotes] = await Promise.all([
+  const [mockups, quotes, productionView] = await Promise.all([
     listMockups(project.id, user.id),
     listQuotes(project.id, user.id),
+    getProductionView(project.id, user.id),
   ]);
 
   // The newest quote is the one being worked on; the rest are history. Only it
@@ -398,7 +401,19 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             currency: quote.currency,
           }))}
         />
-        <PendingPanel title={strings.workspace.documents} note={strings.workspace.documentsNote} />
+        <ProductionPanel
+          projectId={project.id}
+          blockers={productionView.blockers}
+          gaps={productionView.gaps}
+          available={productionView.available}
+          packages={productionView.documents.map((entry) => ({
+            id: entry.id,
+            version: entry.version,
+            notes: entry.notes,
+            hasPdf: entry.pdfObjectKey !== null,
+            createdAt: entry.createdAt.toISOString(),
+          }))}
+        />
       </div>
     </main>
   );

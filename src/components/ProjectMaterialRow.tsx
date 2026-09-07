@@ -3,15 +3,8 @@
 import { useState } from 'react';
 import { strings } from '@/lib/strings';
 import { PRICE_UNIT_LABELS, type MeasurementModel } from '@/lib/materials/schema';
-import { formatMoney } from '@/lib/materials/format';
+import { UNIT_LABEL, formatMoney } from '@/lib/materials/format';
 import type { SelectedMaterial } from './ProjectMaterialsPanel';
-
-const UNIT_LABEL: Record<MeasurementModel, string> = {
-  linear: 'm',
-  sheet: 'm²',
-  area: 'm²',
-  piece: 'pieces',
-};
 
 export function ProjectMaterialRow({
   row,

@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import type { QuoteDocument } from './document';
 import { GROUP_SEPARATOR } from './format';
 import { renderQuotePdf } from './pdf';
-import { extractPdfText, offPagePlacements } from './pdf-text';
+import { extractPdfText, offPagePlacements } from '@/lib/pdf/text';
 
 /**
  * These render a real PDF and read back the text a client would see.

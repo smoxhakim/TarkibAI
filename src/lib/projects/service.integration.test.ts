@@ -124,7 +124,7 @@ describe('hard delete', () => {
       data: { projectId: project.id, version: 1, data: { dimensions: { width: 8 } } },
     });
     await prisma.document.create({
-      data: { projectId: project.id, type: 'client_quote', version: 1, pdfUrl: 'r2://test' },
+      data: { projectId: project.id, type: 'production', version: 1, pdfObjectKey: 'test/key.pdf' },
     });
 
     await deleteProject(project.id, ownerId);

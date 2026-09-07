@@ -1,5 +1,18 @@
 import type { MeasurementModel } from './schema';
 
+/** The unit a requirement is stated in, by measurement model. */
+export const UNIT_LABEL: Record<MeasurementModel, string> = {
+  linear: 'm',
+  sheet: 'm²',
+  area: 'm²',
+  piece: 'pieces',
+};
+
+/** Tolerates a model read back from the database as a plain string. */
+export function unitLabelFor(measurementModel: string): string {
+  return UNIT_LABEL[measurementModel as MeasurementModel] ?? '';
+}
+
 /**
  * Display helpers. Deliberately pure and separate from the service layer so
  * they can be unit-tested and reused by the UI, the AI layer, and later by
