@@ -34,6 +34,9 @@ import { LinearCutPanel } from '@/components/LinearCutPanel';
 import { EfficiencyPanel } from '@/components/EfficiencyPanel';
 import { DrawingsPanel } from '@/components/DrawingsPanel';
 import { listIssuedDrawings, renderLiveDrawing } from '@/lib/drawings/service';
+import { MockupsPanel } from '@/components/MockupsPanel';
+import { listMockups } from '@/lib/mockup/service';
+import { isMockupConfigured } from '@/lib/mockup/provider';
 import { getRecommendations } from '@/lib/calc/efficiency/service';
 import { formatStockSize } from '@/lib/materials/format';
 
@@ -98,6 +101,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     renderLiveDrawing(project.id, user.id),
     listIssuedDrawings(project.id, user.id),
   ]);
+  const mockups = await listMockups(project.id, user.id);
 
   const linearMaterials = projectMaterials
     .map((row) => library.find((material) => material.id === row.materialId))
@@ -197,6 +201,23 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,
           }))}
           library={library.map((m) => ({ id: m.id, name: m.name, category: m.category }))}
+        />
+        <MockupsPanel
+          projectId={project.id}
+          configured={isMockupConfigured()}
+          sitePhotos={files
+            .filter((file) => file.mimeType.startsWith('image/'))
+            .map((file) => ({ id: file.id, name: file.originalName }))}
+          mockups={mockups.map((mockup) => ({
+            id: mockup.id,
+            kind: mockup.kind,
+            status: mockup.status as 'queued' | 'running' | 'succeeded' | 'failed',
+            prompt: mockup.prompt,
+            model: mockup.model,
+            failureReason: mockup.failureReason,
+            hasImage: mockup.resultObjectKey !== null,
+            createdAt: mockup.createdAt.toISOString(),
+          }))}
         />
         <DrawingsPanel
           projectId={project.id}
