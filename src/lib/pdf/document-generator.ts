@@ -1,30 +1,19 @@
-// Document Generator — assembles client quote & production PDFs via @react-pdf/renderer.
-// IMPORTANT: client_quote PDFs must NEVER include internal cost/margin data.
+/**
+ * Production document generation — Phase 14.
+ *
+ * The client quote pipeline that this file used to sketch is implemented: see
+ * `src/lib/quotes/`. `toClientSafeCost` lives in `src/lib/calc/costs/engine.ts`
+ * and the quote template consumes `QuoteDocument` from
+ * `src/lib/quotes/document.ts`, which has no internal fields to strip.
+ *
+ * The sketches for those were removed rather than left here, because a second
+ * `toClientSafeCost` that throws is something a future reader could import by
+ * mistake instead of the real one.
+ */
 
-export interface ClientSafeCost {
-  lineItems: Array<{ label: string; quantity: number; unitPriceCents: number; totalCents: number }>;
-  subtotalCents: number;
-  taxCents: number;
-  totalCents: number;
-}
-
-// The ONLY allowed path for feeding cost data into the quote PDF template.
-// Strips materialsCostCents/laborCostCents/marginCents/internalTotalCents etc.
-export function toClientSafeCost(projectCost: unknown): ClientSafeCost {
-  // TODO: map internal ProjectCost fields -> client-safe shape only
-  throw new Error('not implemented');
-}
-
-// Generates the client-facing quotation PDF (logo, client info, line items, totals, terms).
-export async function generateClientQuotePdf(projectId: string): Promise<{ pdfUrl: string }> {
-  // TODO: load project, quoteSettings, toClientSafeCost(cost)
-  // TODO: render with @react-pdf/renderer, upload to R2, create Document row
-  throw new Error('not implemented');
-}
-
-// Generates the production PDF: diagram + material list + cutting plan images.
-export async function generateProductionPdf(projectId: string): Promise<{ pdfUrl: string }> {
-  // TODO: load Diagram, ProjectMaterial[], CuttingPlan[] for projectId
-  // TODO: render with @react-pdf/renderer, upload to R2, create Document row
+/** Generates the production PDF: drawings, material list, cutting plans. */
+export async function generateProductionPdf(_projectId: string): Promise<{ pdfUrl: string }> {
+  // TODO (T14): load Diagram, ProjectMaterial[], CuttingPlan[] for the project,
+  // render with @react-pdf/renderer, upload to R2, create a Document row.
   throw new Error('not implemented');
 }

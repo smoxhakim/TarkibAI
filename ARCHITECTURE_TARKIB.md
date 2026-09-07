@@ -833,16 +833,22 @@ This prevents accidental leakage of:
 
 Documents should be generated from structured project data.
 
-### Client quote pipeline
+### Client quote pipeline (implemented in T13)
 
 Project
- -> approved commercial data
- -> client-safe serializer
+ -> ProjectCost (internal)
+ -> Quote + QuoteLine   (client prices only; seeded from the client subtotal)
+ -> buildQuoteDocument  (QuoteDocument: no internal fields exist on the type)
+ -> assertClientSafe
  -> quote template
  -> @react-pdf/renderer
- -> PDF
  -> R2
  -> signed download URL
+
+A draft is rendered on demand and streamed, watermarked, and never stored. Only
+an issued quote is written to R2, and the stored file is what a download
+returns — re-rendering it could produce something subtly different from the
+document the client received.
 
 ### Production pipeline
 
@@ -1945,3 +1951,87 @@ for twice.
 **Images are private.** Results go to R2 under the project's prefix and are
 served through an ownership-checked redirect to a short-lived signed URL — the
 same pattern as project files.
+
+### T13 — Client Quote System (Phase 13)
+
+**A typed `Quote` model, not the generic `Document` row.** A quote carries
+structured data that must be frozen — client block, priced lines, tax rate,
+company block — and `Document` holds only a type, a version and a URL. The
+generic model is left for T14 to decide on. Every other milestone that produced
+an artefact (Mockup, Diagram, CuttingPlan) made a typed model, and quotes are
+not the place to break that.
+
+**The client-safe boundary is a type, not a filter.** `QuoteDocument` is built
+field by field from the quote and the issuer block, and the PDF template
+consumes nothing else. It has no import from the cost layer, so there is no path
+by which margin or a purchase price could reach the page. A deny-list would leak
+any internal column added later, by default; here such a column is simply absent
+unless someone deliberately adds it to the type — and `assertClientSafe`, which
+runs on the way into the renderer, then throws.
+
+**The leak test asserts on the rendered page, not on the object.** It costs a
+project to known figures, renders the PDF, decompresses the content streams and
+reads back the text a client would actually see. Asserting on the document
+object would prove only that the object is clean.
+
+**And it guards its own premise.** At 25% margin and 20% tax the two are always
+equal — the tax on a marked-up total is exactly the markup — so a leak test at
+those rates passes on an arithmetic identity rather than on the separation it
+means to prove. The fixture uses 40% and 20%, and asserts up front that no
+internal amount coincides with a client amount before asserting that none
+appears.
+
+**Line totals are rounded once, in the engine.** Quantities are integer
+thousandths and money integer minor units. Rounding at display time instead
+would let the printed lines sum to something other than the printed subtotal,
+which is the first thing a client checks. Tax is applied to the subtotal and
+never per line: rounding each line's tax and summing gives a different figure
+from taxing the sum, and the sum is what is being charged.
+
+**A quote cannot exist without a cost calculation.** Creating one is refused
+until the project has been costed, and the first line is seeded at the
+calculated client subtotal. A quote conjured without one would be a price with
+no basis.
+
+**But the user may still price differently, visibly.** The lines are theirs to
+write, and the subtotal follows the lines rather than being pinned to the
+engine. The gap between the two is computed and shown. Forbidding the deviation
+would be wrong — the user is the authority on price — and permitting it
+silently would be worse.
+
+**The tax rate comes from the cost's snapshot, not from today's settings.**
+Otherwise editing the tax rate would silently re-price a quote built on an older
+calculation, and its totals would no longer reconcile with the cost behind it.
+
+**Issuing freezes and is not reversible.** The company block is snapshotted onto
+the quote, so renaming the business later does not rewrite a document a client
+is holding. An issued quote cannot be edited or deleted; re-quoting means a new
+quote with a new number. Rendering is synchronous — a one-page quote takes well
+under a second, and a job queue would add a queued state and a failure mode for
+nothing. If the PDF fails to render or store, the quote is rolled back to draft:
+a number marked issued that the user cannot send is worse than no number.
+
+**Numbers are allocated at creation, not at issue.** A draft therefore has one
+stable identity from the moment the user starts writing it, at the cost of gaps
+in the sequence where drafts were abandoned. The unique constraint on
+(userId, sequence) is the real guard — two concurrent creates collide there
+rather than handing the same number to two clients.
+
+**Arabic script is reported, not silently dropped.** The template uses the
+built-in Helvetica family, which has no Arabic glyphs: Arabic text renders as
+blank boxes on a document a client receives. The quote view detects it and says
+so. Embedding a font is deferred, not overlooked.
+
+**The logo is uploaded through the server.** Project files are presigned and
+sent straight to R2 because they can be large. A logo is capped at 2 MB and
+replaces one row field, so the presign/confirm handshake would buy nothing.
+
+**react-pdf mis-measures `render`-prop text, silently.** A `<Text render={...}>`
+measures roughly 5800pt tall in 4.9.0, so anchoring it on `bottom` places it
+thousands of points off the page — and nesting it in a flex row spreads that
+height to the whole row, which is how the footer first disappeared. The PDF was
+structurally valid and contained every character; only the placement transforms
+said otherwise. `maxHeight` caps the bogus measurement; an explicit `height`
+makes the text vanish instead. `offPagePlacements` reads the transforms back and
+fails the test when anything lands off the paper, because no assertion about
+text content can catch this class of defect.

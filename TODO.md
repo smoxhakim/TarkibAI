@@ -408,27 +408,49 @@ Mockups must be clearly positioned as presentation visualizations rather than gu
 
 # Phase 13 — Client Quotation
 
-## T13 — Client Quote System
+## T13 — Client Quote System ✅ COMPLETE
 
-- [ ] Quote template
-- [ ] QuoteSettings
-- [ ] Company information
-- [ ] Client information
-- [ ] Line items
-- [ ] Quantities
-- [ ] Unit prices
-- [ ] Tax
-- [ ] Commercial totals
-- [ ] Optional mockup
-- [ ] Terms
-- [ ] PDF generation
-- [ ] R2 storage
-- [ ] Signed downloads
-- [ ] Client-safe financial serializer
+- [x] Quote template (`@react-pdf/renderer`, A4, accent colour, draft watermark)
+- [x] QuoteSettings UI (`/settings/quotes`)
+- [x] Company information (name, address, phone, email, tax identifiers)
+- [x] Company logo (uploaded to R2, inlined into the PDF)
+- [x] Client information (name, address, phone, email)
+- [x] Line items (user-authored, replaced wholesale, positions preserved)
+- [x] Quantities (integer thousandths, so 2.5 m² is exact)
+- [x] Unit prices (integer minor units)
+- [x] Tax (basis points from the cost snapshot, applied to the subtotal)
+- [x] Commercial totals (computed by the engine, never accepted from a request)
+- [x] Optional mockup (succeeded mockups only, labelled as indicative)
+- [x] Terms and payment details (frozen onto the quote at issue)
+- [x] Quote numbering (per business, PREFIX-YEAR-NNNN, unique-constrained)
+- [x] PDF generation (synchronous; draft previews streamed, never stored)
+- [x] R2 storage
+- [x] Signed downloads
+- [x] Client-safe financial serializer (`QuoteDocument` + `assertClientSafe`)
+- [x] Divergence reporting when a quote is priced away from the calculation
+- [x] Tests (27 unit, 23 integration, including a rendered-PDF leak test)
+
+### Deferred out of T13 (deliberately)
+
+- [ ] Arabic-script rendering — the built-in Helvetica family has no Arabic
+      glyphs, so Arabic text would print as blank boxes. The quote view reports
+      this instead of printing them. Fixing it means embedding a font.
+- [ ] Emailing a quote to the client — no mail provider is wired yet
+      (`resend` is still a deferred dependency)
+- [ ] Per-project margin or tax override — settings remain per user
+- [ ] Editing an issued quote — deliberately impossible; re-quote instead
+- [ ] Revising a quote as a new version of the same number — a new quote gets
+      a new number, which is what per-business numbering means
+- [ ] Discounts and deposits as line types
+- [ ] Yearly reset of the quote sequence — numbers carry the current year but
+      the sequence runs continuously, so the first quote of a new year does not
+      restart at 0001. Uniqueness is unaffected.
+- [ ] AI tools for quoting — the agent can read the spec but has no tool that
+      creates, prices or issues a quote, by design
 
 ### Definition of done
 
-A user can generate and download a professional client quotation without leaking internal business costs.
+A user can generate and download a professional client quotation without leaking internal business costs. ✅
 
 ---
 
@@ -662,14 +684,34 @@ Completed:
 - [x] **T10 — Material Efficiency Recommendations** (Phase 10)
 - [x] **T11 — Structured Technical Drawings** (Phase 11)
 - [x] **T12 — AI Mockups** (Phase 12) — pending live provider verification
+- [x] **T13 — Client Quote System** (Phase 13)
 
 Active milestone:
 
-- [ ] None. T13 has not been started.
+- [ ] None. T14 has not been started.
 
 Next milestone:
 
-- [ ] **T13 — Client Quote System** (Phase 13)
+- [ ] **T14 — Production PDF** (Phase 14)
+
+### T13 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 323 passed |
+| Integration tests | 171 passed against Neon |
+| Production build | passed, 52 routes |
+| Migrations | 15 applied |
+| Quote PDF | rendered and inspected visually (header, table, totals, footer, draft watermark, multi-page) |
+| Cost separation | leak test renders the PDF, reads the text back, and finds no internal figure |
+| R2 | issued quotes stored and downloaded through a signed URL |
+
+**The in-app quote panel was not screenshotted.** The browser available here has
+no Clerk session and signing in is not something to do on the user's behalf. The
+PDF — the artefact a client actually receives — was rendered and inspected, and
+the panel reuses the primitives of the ten panels already shipped.
 
 ### T12 verification record
 
