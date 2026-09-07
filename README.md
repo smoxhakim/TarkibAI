@@ -251,7 +251,10 @@ src/
       projects/[id]/design-proposals/[proposalId]/  # POST — approve | reject
       projects/[id]/cutting-pieces/   # GET, POST
       projects/[id]/cutting-pieces/[pieceId]/  # DELETE
-      projects/[id]/cutting-plan/     # GET, POST — guillotine nesting
+      projects/[id]/cutting-plan/     # GET, POST — guillotine sheet nesting
+      projects/[id]/linear-cuts/      # GET, POST
+      projects/[id]/linear-cuts/[cutId]/  # DELETE
+      projects/[id]/linear-plan/      # GET, POST — bar cut optimisation
     cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
@@ -261,7 +264,8 @@ src/
                           # ChatPanel, SpecPanel, FilesPanel,
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
                           # ProjectMaterialRow, CostPanel, CostSettingsForm,
-                          # CanvasPanel, DesignProposalsPanel, CuttingPlanPanel
+                          # CanvasPanel, DesignProposalsPanel, CuttingPlanPanel,
+                          # LinearCutPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -284,7 +288,8 @@ src/
     calc/
       materials/          # deterministic material engine (pure) + persistence
       costs/              # deterministic cost engine + client-safe serializer
-      cutting/            # guillotine nesting engine, diagram renderer, service
+      cutting/            # guillotine sheet nesting + 1D bar packing,
+                          # diagram renderers, service
     canvas/               # scene schema, command reducer, SVG renderer, service
     design/               # AI design proposals and the approval gate
     pdf/                  # (stub) Phase 13
@@ -467,7 +472,7 @@ TARKIB is built progressively according to the roadmap in `TODO.md`.
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
 T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
 T6 Smart Canvas · T7 Conversational Design Editing ·
-T8 Sheet Cutting Optimization**
+T8 Sheet Cutting Optimization · T9 Linear Material Cutting**
 
 Working end to end:
 
@@ -523,7 +528,13 @@ sheets, producing a visual cutting plan, real waste, and usable offcuts. Cuts ru
 edge to edge so a panel saw can actually make them. Pieces too large for the
 sheet are reported rather than silently split.
 
-**Next: T9 — Linear Material Cutting (Phase 9)**
+T9 adds: bar and profile cut optimisation with kerf, per-bar utilisation and
+remnants that are reported as reusable stock rather than waste when they are
+long enough to keep. It also fixes a real defect in T4, whose linear bar count
+divided total length by bar length and presented the result as exact — that
+under-counts whenever cut lengths do not pack neatly.
+
+**Next: T10 — Material Efficiency Recommendations (Phase 10)**
 
 Not yet implemented. The document panel remains explicitly labelled as unbuilt.
 Nothing in the product returns a fabricated number or a mocked AI reply.

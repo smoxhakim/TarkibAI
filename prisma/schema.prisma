@@ -96,6 +96,7 @@ model Project {
   projectMaterials ProjectMaterial[]
   cuttingPlans     CuttingPlan[]
   cuttingPieces    CuttingPiece[]
+  linearCuts       LinearCut[]
   diagrams         Diagram[]
   mockups          Mockup[]
   costs            ProjectCost[]
@@ -238,6 +239,7 @@ model Material {
   projectMaterials ProjectMaterial[]
   cuttingPlans     CuttingPlan[]
   cuttingPieces    CuttingPiece[]
+  linearCuts       LinearCut[]
 
   @@index([userId, archivedAt])
   @@index([userId, category])
@@ -309,6 +311,28 @@ model ProjectMaterial {
   @@index([projectId])
 }
 
+/// A required cut length for a linear material — bar, tube or profile.
+///
+/// The 1D counterpart of CuttingPiece. Kept separate rather than reusing a
+/// height field that would be meaningless: a bar cut has one dimension, and
+/// pretending otherwise invites a wrong number into the optimiser.
+model LinearCut {
+  id         String   @id @default(uuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id])
+
+  label    String?
+  lengthMm Int
+  quantity Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, materialId])
+}
+
 /// The pieces to cut from one sheet material on a project.
 ///
 /// Nesting needs individual piece dimensions, which a total area cannot supply.
@@ -344,14 +368,19 @@ model CuttingPlan {
   materialId String
   material   Material @relation(fields: [materialId], references: [id])
 
-  sheetSizeLabel String
+  /// sheet | linear. One plan per material, and a material is one or the other.
+  kind String @default("sheet")
 
-  /// Sheet placements, offcuts, and the settings used. Read through a validated
-  /// schema, never trusted raw.
+  /// e.g. "2440 × 1220 mm" for a sheet, "6 m bar" for linear stock.
+  stockSizeLabel String
+
+  /// Placements/cut sequence, offcuts or remnants, and the settings used. Read
+  /// through a validated schema, never trusted raw.
   layoutData Json
 
-  sheetsUsed   Int
-  wastePercent Decimal
+  /// Whole stock units consumed: sheets for a sheet plan, bars for a linear one.
+  stockUnitsUsed Int
+  wastePercent   Decimal
 
   /// Cut settings in force when the plan was computed, so a layout stays
   /// explicable after the material's technical properties are edited.

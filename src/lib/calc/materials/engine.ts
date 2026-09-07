@@ -33,7 +33,7 @@ export type CalculationStep = {
 };
 
 export type CalculationWarning = {
-  code: 'sheet_nesting_estimate';
+  code: 'sheet_nesting_estimate' | 'linear_packing_estimate';
   message: string;
 };
 
@@ -121,7 +121,18 @@ export function calculateMaterialLine(input: CalculationInput): CalculationResul
           { label: 'Purchased', value: `${num(purchased)} m` },
           { label: 'Waste', value: `${num(waste)} m` },
         ],
-        warnings: [],
+        warnings: [
+          {
+            code: 'linear_packing_estimate',
+            // Dividing total length by bar length UNDER-counts whenever the cut
+            // lengths do not pack neatly. Four 4 m pieces from 6 m bars is 16 m,
+            // which suggests three bars, but only one 4 m piece fits per bar —
+            // four are needed. Under-buying stops a job mid-fabrication, so this
+            // number must not be presented as exact.
+            message:
+              'This is a MINIMUM bar count from total length. It assumes bars can be used end to end. Cut lengths that do not pack neatly need more bars — four 4 m pieces need four 6 m bars, not three. For the real count, add the cut lengths and generate a cutting plan.',
+          },
+        ],
       };
     }
 

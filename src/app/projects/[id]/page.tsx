@@ -24,7 +24,13 @@ import { getScene } from '@/lib/canvas/service';
 import { DesignProposalsPanel } from '@/components/DesignProposalsPanel';
 import { listProposals } from '@/lib/design/service';
 import { CuttingPlanPanel } from '@/components/CuttingPlanPanel';
-import { listPieces, listPlans } from '@/lib/calc/cutting/service';
+import {
+  listLinearCuts,
+  listLinearPlans,
+  listPieces,
+  listPlans,
+} from '@/lib/calc/cutting/service';
+import { LinearCutPanel } from '@/components/LinearCutPanel';
 import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +87,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       listPieces(project.id, user.id),
       listPlans(project.id, user.id),
     ]);
+  const [linearCuts, linearPlans] = await Promise.all([
+    listLinearCuts(project.id, user.id),
+    listLinearPlans(project.id, user.id),
+  ]);
+
+  const linearMaterials = projectMaterials
+    .map((row) => library.find((material) => material.id === row.materialId))
+    .filter(
+      (material): material is NonNullable<typeof material> =>
+        material !== undefined && material.measurementModel === 'linear'
+    );
 
   // Cutting applies to sheet stock only; linear optimisation is a later phase.
   const sheetMaterials = projectMaterials
@@ -200,8 +217,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             .filter((entry) => entry.plan !== null)
             .map((entry) => ({
               materialId: entry.plan!.materialId,
-              sheetSizeLabel: entry.plan!.sheetSizeLabel,
-              sheetsUsed: entry.plan!.sheetsUsed,
+              sheetSizeLabel: entry.plan!.stockSizeLabel,
+              sheetsUsed: entry.plan!.stockUnitsUsed,
               wastePercent: entry.plan!.wastePercent.toString(),
               kerfMm: entry.plan!.kerfMm,
               edgeMarginMm: entry.plan!.edgeMarginMm,
@@ -212,6 +229,37 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 (sum, sheet) => sum + sheet.offcuts.length,
                 0
               ),
+            }))}
+        />
+        <LinearCutPanel
+          projectId={project.id}
+          materials={linearMaterials.map((material) => ({
+            id: material.id,
+            name: material.name,
+            barLabel: material.standardLengthMm
+              ? `${Number((material.standardLengthMm / 1000).toFixed(3))} m bar`
+              : '—',
+          }))}
+          cuts={linearCuts.map((cut) => ({
+            id: cut.id,
+            materialId: cut.materialId,
+            label: cut.label,
+            lengthMm: cut.lengthMm,
+            quantity: cut.quantity,
+          }))}
+          plans={linearPlans
+            .filter((entry) => entry.plan !== null && entry.result !== null)
+            .map((entry) => ({
+              materialId: entry.plan!.materialId,
+              stockSizeLabel: entry.plan!.stockSizeLabel,
+              barsUsed: entry.plan!.stockUnitsUsed,
+              wastePercent: entry.plan!.wastePercent.toString(),
+              kerfMm: entry.plan!.kerfMm,
+              usableRemnantsMm: entry.result!.usableRemnantsMm,
+              totalRequiredMm: entry.result!.totalRequiredMm,
+              totalPurchasedMm: entry.result!.totalPurchasedMm,
+              unplaced: entry.result!.unplaced,
+              svg: entry.svg,
             }))}
         />
         <CostPanel
