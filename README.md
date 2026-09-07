@@ -188,7 +188,6 @@ accumulating advisories.
 
 | Package | Added in |
 | --- | --- |
-| `inngest` | Phase 12 — background jobs for mockups |
 | `@react-pdf/renderer` | Phase 13 — client quotation PDFs |
 | `stripe` | Phase 20 — billing |
 | `resend` | later — email |
@@ -259,6 +258,10 @@ src/
       projects/[id]/recommendations/apply/  # POST — switch material
       projects/[id]/drawings/         # GET — live drawing + issued versions
       projects/[id]/drawings/issue/   # POST — capture a numbered snapshot
+      projects/[id]/mockups/          # GET, POST — gallery, queue generation
+      projects/[id]/mockups/[mockupId]/        # DELETE
+      projects/[id]/mockups/[mockupId]/image/  # GET — signed redirect
+    inngest/                          # background job endpoint (machine caller)
     cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
@@ -269,7 +272,8 @@ src/
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
                           # ProjectMaterialRow, CostPanel, CostSettingsForm,
                           # CanvasPanel, DesignProposalsPanel, CuttingPlanPanel,
-                          # LinearCutPanel, EfficiencyPanel, DrawingsPanel
+                          # LinearCutPanel, EfficiencyPanel, DrawingsPanel,
+                          # MockupsPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -296,6 +300,8 @@ src/
                           # diagram renderers, service
       efficiency/         # material savings, computed by re-running the engines
     drawings/             # orthographic projection, sheet renderer, issuing
+    mockup/               # provider abstraction, prompt construction, jobs
+    inngest/              # background job client and functions
     canvas/               # scene schema, command reducer, SVG renderer, service
     design/               # AI design proposals and the approval gate
     pdf/                  # (stub) Phase 13
@@ -479,7 +485,8 @@ TARKIB is built progressively according to the roadmap in `TODO.md`.
 T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
 T6 Smart Canvas · T7 Conversational Design Editing ·
 T8 Sheet Cutting Optimization · T9 Linear Material Cutting ·
-T10 Material Efficiency Recommendations · T11 Technical Drawings**
+T10 Material Efficiency Recommendations · T11 Technical Drawings ·
+T12 AI Mockups**
 
 Working end to end:
 
@@ -554,7 +561,15 @@ a thickness. Drawings render live and can be issued as numbered snapshots for a
 workshop. Section views are deliberately not implemented — they would require
 inventing internal structure.
 
-**Next: T12 — AI Mockups (Phase 12)**
+T12 adds: concept and real-site mockups generated in the background through
+Inngest, with prompts built only from facts the specification records, progress
+states that say why a generation failed, and a gallery. Mockups are labelled as
+presentation aids, never production geometry.
+
+Requires `REPLICATE_API_TOKEN`, and locally `npx inngest-cli@latest dev`
+alongside the dev server.
+
+**Next: T13 — Client Quote System (Phase 13)**
 
 Not yet implemented. The document panel remains explicitly labelled as unbuilt.
 Nothing in the product returns a fabricated number or a mocked AI reply.

@@ -382,18 +382,25 @@ Supported project types can generate structured technical documentation from val
 
 # Phase 12 — Mockup Generation
 
-## T12 — AI Mockups
+## T12 — AI Mockups ✅ COMPLETE (pending live provider verification)
 
-- [ ] Mockup model
-- [ ] Image generation provider abstraction
-- [ ] Design concept generation
-- [ ] Site-photo compositing
-- [ ] Upload site photo
-- [ ] Prompt construction from project state
-- [ ] Inngest jobs
-- [ ] Progress states
-- [ ] Mockup gallery
-- [ ] Mockup history
+- [x] Mockup model (kind, status, prompt source, failure reason, timings)
+- [x] Image generation provider abstraction (Replicate first)
+- [x] Design concept generation
+- [x] Site-photo compositing (image-to-image onto a real photo)
+- [x] Upload site photo (reuses the T2 file pipeline)
+- [x] Prompt construction from project state (stated facts only)
+- [x] Inngest jobs (`/api/inngest`, outside the Clerk boundary by design)
+- [x] Progress states (queued / running / succeeded / failed, with reasons)
+- [x] Mockup gallery
+- [x] Mockup history
+
+### Deferred out of T12 (deliberately)
+
+- [ ] Live polling — the panel offers a refresh rather than a socket or interval
+- [ ] Regenerating a mockup with an edited prompt
+- [ ] Attaching a chosen mockup to a client quote (T13 decides that)
+- [ ] Model comparison / multiple candidates per request
 
 Mockups must be clearly positioned as presentation visualizations rather than guaranteed production geometry.
 
@@ -654,14 +661,36 @@ Completed:
 - [x] **T9 — Linear Material Cutting** (Phase 9)
 - [x] **T10 — Material Efficiency Recommendations** (Phase 10)
 - [x] **T11 — Structured Technical Drawings** (Phase 11)
+- [x] **T12 — AI Mockups** (Phase 12) — pending live provider verification
 
 Active milestone:
 
-- [ ] None. T12 has not been started.
+- [ ] None. T13 has not been started.
 
 Next milestone:
 
-- [ ] **T12 — AI Mockups** (Phase 12)
+- [ ] **T13 — Client Quote System** (Phase 13)
+
+### T12 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 295 passed |
+| Integration tests | 147 passed against Neon |
+| Production build | passed, 49 routes |
+| Migrations | 14 applied |
+| Auth boundary | mockup routes JSON 401; `/api/inngest` deliberately open, signature-guarded |
+| Inngest endpoint | HTTP 200, 1 function registered, dev mode |
+
+**Live generation is NOT verified.** `REPLICATE_API_TOKEN` is unset, so no image
+has actually been generated. Everything around the provider is verified: prompt
+construction, aspect ratios, ownership, the refusal to generate from an
+undescribed project, failure recording, and the Inngest registration.
+
+To verify end to end: add `REPLICATE_API_TOKEN`, run `npx inngest-cli@latest dev`
+alongside `npm run dev`, then generate a concept mockup.
 
 ### T11 verification record
 

@@ -12,8 +12,15 @@ const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)']);
 // sign-in page instead would hand an API client an unparseable response.
 const isApiRoute = createRouteMatcher(['/api(.*)']);
 
+/**
+ * The Inngest endpoint is called by the job runner as a machine, with no user
+ * session. It authenticates by request signature instead, so it must not be
+ * pushed through Clerk at all.
+ */
+const isMachineRoute = createRouteMatcher(['/api/inngest(.*)']);
+
 export default clerkMiddleware(async (auth, request) => {
-  if (isPublicRoute(request) || isApiRoute(request)) return;
+  if (isMachineRoute(request) || isPublicRoute(request) || isApiRoute(request)) return;
   await auth.protect();
 });
 
