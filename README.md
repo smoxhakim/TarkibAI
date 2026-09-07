@@ -255,6 +255,8 @@ src/
       projects/[id]/linear-cuts/      # GET, POST
       projects/[id]/linear-cuts/[cutId]/  # DELETE
       projects/[id]/linear-plan/      # GET, POST — bar cut optimisation
+      projects/[id]/recommendations/  # GET — computed material savings
+      projects/[id]/recommendations/apply/  # POST — switch material
     cost-settings/                    # GET, PUT
     materials/                       # GET, POST
     materials/[id]/                  # GET, PATCH, DELETE
@@ -265,7 +267,7 @@ src/
                           # MaterialLibrary, MaterialForm, ProjectMaterialsPanel,
                           # ProjectMaterialRow, CostPanel, CostSettingsForm,
                           # CanvasPanel, DesignProposalsPanel, CuttingPlanPanel,
-                          # LinearCutPanel
+                          # LinearCutPanel, EfficiencyPanel
 
   lib/
     db.ts                 # Prisma singleton + pg driver adapter
@@ -290,6 +292,7 @@ src/
       costs/              # deterministic cost engine + client-safe serializer
       cutting/            # guillotine sheet nesting + 1D bar packing,
                           # diagram renderers, service
+      efficiency/         # material savings, computed by re-running the engines
     canvas/               # scene schema, command reducer, SVG renderer, service
     design/               # AI design proposals and the approval gate
     pdf/                  # (stub) Phase 13
@@ -472,7 +475,8 @@ TARKIB is built progressively according to the roadmap in `TODO.md`.
 **Completed: T0 Foundation · T1 Darija AI Intake · T2 File Management ·
 T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
 T6 Smart Canvas · T7 Conversational Design Editing ·
-T8 Sheet Cutting Optimization · T9 Linear Material Cutting**
+T8 Sheet Cutting Optimization · T9 Linear Material Cutting ·
+T10 Material Efficiency Recommendations**
 
 Working end to end:
 
@@ -534,7 +538,13 @@ long enough to keep. It also fixes a real defect in T4, whose linear bar count
 divided total length by bar length and presented the result as exact — that
 under-counts whenever cut lengths do not pack neatly.
 
-**Next: T10 — Material Efficiency Recommendations (Phase 10)**
+T10 adds: material savings computed by re-running the real cutting engines
+against every alternative in your own library. A recommendation is only shown
+when it strictly reduces cost and can still produce every piece. Nothing is
+stored, because a stale saving is worse than none, and the agent can explain the
+figures in Darija but cannot generate or apply one.
+
+**Next: T11 — Structured Technical Drawings (Phase 11)**
 
 Not yet implemented. The document panel remains explicitly labelled as unbuilt.
 Nothing in the product returns a fabricated number or a mocked AI reply.

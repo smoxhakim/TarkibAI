@@ -31,6 +31,8 @@ import {
   listPlans,
 } from '@/lib/calc/cutting/service';
 import { LinearCutPanel } from '@/components/LinearCutPanel';
+import { EfficiencyPanel } from '@/components/EfficiencyPanel';
+import { getRecommendations } from '@/lib/calc/efficiency/service';
 import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
@@ -87,9 +89,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       listPieces(project.id, user.id),
       listPlans(project.id, user.id),
     ]);
-  const [linearCuts, linearPlans] = await Promise.all([
+  const [linearCuts, linearPlans, efficiency] = await Promise.all([
     listLinearCuts(project.id, user.id),
     listLinearPlans(project.id, user.id),
+    getRecommendations(project.id, user.id),
   ]);
 
   const linearMaterials = projectMaterials
@@ -261,6 +264,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               unplaced: entry.result!.unplaced,
               svg: entry.svg,
             }))}
+        />
+        <EfficiencyPanel
+          projectId={project.id}
+          currency={currency}
+          recommendations={efficiency.recommendations}
+          emptyReason={efficiency.emptyReason}
         />
         <CostPanel
           projectId={project.id}
