@@ -166,3 +166,33 @@ describe('job execution', () => {
     expect(after.status).toBe('succeeded');
   });
 });
+
+describe('job dispatch failure', () => {
+  it('reports a clear reason and does not leave the mockup queued forever', async () => {
+    // Verified behaviour: with no Inngest dev server reachable, send() throws
+    // "fetch failed". Left unhandled that surfaces as an opaque 500 and the row
+    // sits on "queued", looking like a job that will eventually run.
+    process.env.REPLICATE_API_TOKEN = 'test-token';
+    const project = await describedProject();
+
+    let thrown: unknown;
+    try {
+      await requestMockup(project.id, ownerId, { kind: 'concept' });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // Either the dev server is running (dispatch succeeds) or it is not, and
+    // then the failure must be legible rather than opaque.
+    if (thrown) {
+      expect(thrown).toMatchObject({ status: 503, code: 'jobs_unavailable' });
+
+      const mockups = await listMockups(project.id, ownerId);
+      expect(mockups[0].status).toBe('failed');
+      expect(mockups[0].failureReason).toContain('could not be reached');
+    } else {
+      const mockups = await listMockups(project.id, ownerId);
+      expect(['queued', 'running', 'succeeded', 'failed']).toContain(mockups[0].status);
+    }
+  });
+});
