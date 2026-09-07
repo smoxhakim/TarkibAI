@@ -29,6 +29,7 @@ model User {
   materials     Material[]
   costSettings  CostSettings?
   quoteSettings QuoteSettings?
+  quotes        Quote[]
 }
 
 /// A user's private costing rules. These are business secrets: they determine
@@ -63,15 +64,40 @@ model CostSettings {
   currency String @default("MAD")
 }
 
+/// A user's quotation identity and defaults. Everything here is printed on a
+/// client-facing document, so nothing private belongs on this model.
 model QuoteSettings {
-  id              String  @id @default(uuid())
-  userId          String  @unique
-  user            User    @relation(fields: [userId], references: [id])
-  logoUrl         String?
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  /// Company block printed at the head of every quote. Seeded from
+  /// User.companyName the first time the row is created, then authoritative:
+  /// the account name and the name a client sees need not be the same.
+  companyName    String?
+  companyAddress String?
+  companyPhone   String?
+  companyEmail   String?
+
+  /// Tax/registration identifiers a Moroccan quote is expected to carry
+  /// (ICE, RC, IF). Free text, because the set differs by business form.
+  taxIdentifiers String?
+
+  /// R2 object key for the company logo, never a URL. Same rule as project
+  /// files (ARCHITECTURE 7): reads are signed and short-lived.
+  logoObjectKey String?
+  logoMimeType  String?
+
   primaryColorHex String?
   footerText      String?
   termsText       String?
   paymentDetails  String?
+
+  /// Default validity window printed on a quote, in days.
+  validityDays Int @default(30)
+
+  /// Prefix for generated quote numbers, e.g. "Q" gives "Q-2026-0001".
+  numberPrefix String @default("Q")
 }
 
 model Project {
@@ -101,6 +127,7 @@ model Project {
   mockups          Mockup[]
   costs            ProjectCost[]
   documents        Document[]
+  quotes           Quote[]
   projectExpenses  ProjectExpense[]
   canvasScene      CanvasScene?
   designProposals  DesignProposal[]
@@ -602,4 +629,97 @@ model Document {
   version   Int
   pdfUrl    String
   createdAt DateTime @default(now())
+}
+
+/// A client-facing quotation.
+///
+/// Every amount on this model is a CLIENT price. Purchase prices, labour,
+/// internal expenses and margin are deliberately absent rather than filtered
+/// out on read: a column that does not exist cannot leak into a PDF
+/// (ARCHITECTURE 15). The link back to the internal calculation is
+/// `sourceCostId` alone, and rendering never dereferences it.
+model Quote {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Quote numbers run per business, not per project, which is why the user is
+  /// referenced directly rather than reached through the project.
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  /// Per-user sequence behind `number`. Unique so two concurrent issues cannot
+  /// hand the same number to two different clients.
+  sequence Int
+  number   String
+
+  /// draft | issued. A draft is editable. An issued quote is frozen: a number
+  /// that has reached a client must keep meaning the same thing.
+  status String @default("draft")
+
+  title       String
+  description String?
+
+  clientName    String
+  clientAddress String?
+  clientPhone   String?
+  clientEmail   String?
+
+  /// Client-facing money, integer minor units. `subtotalCents` is the sum of
+  /// the line totals, not a copy of the internal calculation.
+  subtotalCents Int
+  taxBp         Int
+  taxCents      Int
+  totalCents    Int
+  currency      String
+
+  /// The ProjectCost this quote was seeded from, so a quote stays traceable to
+  /// the calculation behind it and divergence can be shown to the user.
+  sourceCostId String?
+
+  /// Optional mockup printed on the quote. References Mockup.id.
+  mockupId String?
+
+  /// Company block, terms and payment details as they stood at issue. An
+  /// issued quote must not change when the user later edits their settings.
+  issuerSnapshot Json?
+
+  validUntil DateTime?
+  issuedAt   DateTime?
+
+  /// R2 object key for the rendered PDF. Null until the quote is issued.
+  pdfObjectKey String?
+
+  lines QuoteLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, sequence])
+  @@unique([userId, number])
+  @@index([projectId, createdAt])
+}
+
+/// One priced line on a quotation.
+model QuoteLine {
+  id      String @id @default(uuid())
+  quoteId String
+  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  position    Int
+  description String
+
+  /// Quantity in thousandths, so 2.5 m2 is 2500. Quantities are genuinely
+  /// fractional, but the arithmetic that reaches money must stay integer
+  /// (ARCHITECTURE 10).
+  quantityMilli Int
+  unitLabel     String?
+
+  unitPriceCents Int
+
+  /// quantityMilli * unitPriceCents / 1000, rounded half away from zero and
+  /// stored, so the printed line total is the exact figure that was summed.
+  lineTotalCents Int
+
+  @@unique([quoteId, position])
 }

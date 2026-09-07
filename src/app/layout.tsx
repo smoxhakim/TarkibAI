@@ -33,6 +33,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   >
                     {strings.costSettings.navLink}
                   </Link>
+                  <Link
+                    href="/settings/quotes"
+                    className="text-ink-muted transition-colors hover:text-ink"
+                  >
+                    {strings.quoteSettings.navLink}
+                  </Link>
                   <UserButton />
                 </Show>
                 <Show when="signed-out">

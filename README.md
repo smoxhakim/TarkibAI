@@ -188,7 +188,6 @@ accumulating advisories.
 
 | Package | Added in |
 | --- | --- |
-| `@react-pdf/renderer` | Phase 13 — client quotation PDFs |
 | `stripe` | Phase 20 — billing |
 | `resend` | later — email |
 | `@sentry/nextjs` | later — monitoring |
@@ -304,7 +303,9 @@ src/
     inngest/              # background job client and functions
     canvas/               # scene schema, command reducer, SVG renderer, service
     design/               # AI design proposals and the approval gate
-    pdf/                  # (stub) Phase 13
+    quotes/               # quote engine, client-safe document, PDF template,
+                          # settings and issuing
+    pdf/                  # (stub) Phase 14 — production package
     geometry/, mockup/    # (planned)
 
 inngest/                  # (planned) Phase 12
@@ -569,10 +570,24 @@ presentation aids, never production geometry.
 Requires `REPLICATE_API_TOKEN`, and locally `npx inngest-cli@latest dev`
 alongside the dev server.
 
-**Next: T13 — Client Quote System (Phase 13)**
+T13 adds: client quotations. A quote is seeded from the calculated client
+subtotal, split into whatever lines you want a client to see, and issued as a
+professional PDF stored privately in R2 behind a signed download. The company
+block, logo, terms, payment details and numbering live in Quote settings.
 
-Not yet implemented. The document panel remains explicitly labelled as unbuilt.
-Nothing in the product returns a fabricated number or a mocked AI reply.
+Internal cost never reaches the document: the template consumes a type that has
+no field for margin, labour or a purchase price, and a test renders the PDF and
+reads the text back to prove it. Pricing differently from the calculation is
+allowed — the difference is computed and shown, so it is a decision rather than
+an accident. Issuing freezes the quote; changing anything means a new quote with
+a new number. Arabic-script text is reported as unrenderable rather than printed
+as blank boxes.
+
+**Next: T14 — Production PDF (Phase 14)**
+
+Not yet implemented. The production document panel remains explicitly labelled
+as unbuilt. Nothing in the product returns a fabricated number or a mocked AI
+reply.
 
 A milestone is complete only when the functionality works end to end — not when
 UI files or API stubs exist.

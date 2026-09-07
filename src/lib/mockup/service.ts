@@ -81,10 +81,31 @@ export async function requestMockup(
     },
   });
 
-  await inngest.send({
-    name: 'mockup/requested',
-    data: { mockupId: mockup.id, projectId, userId },
-  });
+  try {
+    await inngest.send({
+      name: 'mockup/requested',
+      data: { mockupId: mockup.id, projectId, userId },
+    });
+  } catch (error) {
+    // The job runner is unreachable — locally that means `inngest-cli dev` is
+    // not running. Without this the caller gets an opaque 500 and the row sits
+    // on "queued" forever, looking like a job that will eventually run.
+    await prisma.mockup.update({
+      where: { id: mockup.id },
+      data: {
+        status: 'failed',
+        failureReason: 'The background job runner could not be reached, so generation never started.',
+        completedAt: new Date(),
+      },
+    });
+
+    console.error('[mockup] could not dispatch the generation job', error);
+    throw new ApiError(
+      503,
+      'The background job runner is not reachable, so the mockup was not started. In development, run `npx inngest-cli@latest dev` alongside the app.',
+      'jobs_unavailable'
+    );
+  }
 
   return mockup;
 }

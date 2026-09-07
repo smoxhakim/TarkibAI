@@ -38,6 +38,8 @@ import { MockupsPanel } from '@/components/MockupsPanel';
 import { listMockups } from '@/lib/mockup/service';
 import { isMockupConfigured } from '@/lib/mockup/provider';
 import { getRecommendations } from '@/lib/calc/efficiency/service';
+import { QuotesPanel } from '@/components/QuotesPanel';
+import { getQuoteView, listQuotes } from '@/lib/quotes/service';
 import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
@@ -101,7 +103,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     renderLiveDrawing(project.id, user.id),
     listIssuedDrawings(project.id, user.id),
   ]);
-  const mockups = await listMockups(project.id, user.id);
+  const [mockups, quotes] = await Promise.all([
+    listMockups(project.id, user.id),
+    listQuotes(project.id, user.id),
+  ]);
+
+  // The newest quote is the one being worked on; the rest are history. Only it
+  // needs the divergence and issue checks, so only it is looked up in full.
+  const activeQuote = quotes[0] ?? null;
+  const quoteView = activeQuote ? await getQuoteView(activeQuote.id, user.id) : null;
 
   const linearMaterials = projectMaterials
     .map((row) => library.find((material) => material.id === row.materialId))
@@ -331,6 +341,62 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 }
               : null
           }
+        />
+        <QuotesPanel
+          projectId={project.id}
+          currency={currency}
+          costBlockedReason={
+            costView.cost
+              ? null
+              : (costView.blockedReason ??
+                'Calculate the project cost before quoting it. A quote is priced from the cost calculation.')
+          }
+          calculatedSubtotalCents={quoteView?.calculatedSubtotalCents ?? null}
+          divergence={quoteView?.divergence ?? null}
+          blockers={quoteView?.blockers ?? []}
+          warnings={quoteView?.warnings ?? []}
+          mockups={mockups
+            .filter((mockup) => mockup.status === 'succeeded')
+            .map((mockup) => ({
+              id: mockup.id,
+              label: `${mockup.kind === 'site' ? 'Site' : 'Concept'} · ${dateFormat.format(mockup.createdAt)}`,
+            }))}
+          active={
+            activeQuote
+              ? {
+                  id: activeQuote.id,
+                  number: activeQuote.number,
+                  status: activeQuote.status,
+                  clientName: activeQuote.clientName,
+                  clientAddress: activeQuote.clientAddress,
+                  clientPhone: activeQuote.clientPhone,
+                  clientEmail: activeQuote.clientEmail,
+                  mockupId: activeQuote.mockupId,
+                  currency: activeQuote.currency,
+                  lines: activeQuote.lines.map((line) => ({
+                    description: line.description,
+                    quantityMilli: line.quantityMilli,
+                    unitLabel: line.unitLabel,
+                    unitPriceCents: line.unitPriceCents,
+                    lineTotalCents: line.lineTotalCents,
+                  })),
+                  subtotalCents: activeQuote.subtotalCents,
+                  taxBp: activeQuote.taxBp,
+                  taxCents: activeQuote.taxCents,
+                  totalCents: activeQuote.totalCents,
+                  issuedAt: activeQuote.issuedAt?.toISOString() ?? null,
+                  validUntil: activeQuote.validUntil?.toISOString() ?? null,
+                }
+              : null
+          }
+          history={quotes.slice(1).map((quote) => ({
+            id: quote.id,
+            number: quote.number,
+            status: quote.status,
+            clientName: quote.clientName,
+            totalCents: quote.totalCents,
+            currency: quote.currency,
+          }))}
         />
         <PendingPanel title={strings.workspace.documents} note={strings.workspace.documentsNote} />
       </div>
