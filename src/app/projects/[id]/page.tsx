@@ -32,6 +32,8 @@ import {
 } from '@/lib/calc/cutting/service';
 import { LinearCutPanel } from '@/components/LinearCutPanel';
 import { EfficiencyPanel } from '@/components/EfficiencyPanel';
+import { DrawingsPanel } from '@/components/DrawingsPanel';
+import { listIssuedDrawings, renderLiveDrawing } from '@/lib/drawings/service';
 import { getRecommendations } from '@/lib/calc/efficiency/service';
 import { formatStockSize } from '@/lib/materials/format';
 
@@ -89,10 +91,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       listPieces(project.id, user.id),
       listPlans(project.id, user.id),
     ]);
-  const [linearCuts, linearPlans, efficiency] = await Promise.all([
+  const [linearCuts, linearPlans, efficiency, liveDrawing, issuedDrawings] = await Promise.all([
     listLinearCuts(project.id, user.id),
     listLinearPlans(project.id, user.id),
     getRecommendations(project.id, user.id),
+    renderLiveDrawing(project.id, user.id),
+    listIssuedDrawings(project.id, user.id),
   ]);
 
   const linearMaterials = projectMaterials
@@ -193,6 +197,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,
           }))}
           library={library.map((m) => ({ id: m.id, name: m.name, category: m.category }))}
+        />
+        <DrawingsPanel
+          projectId={project.id}
+          svg={liveDrawing.svg}
+          views={liveDrawing.views}
+          sceneEmpty={liveDrawing.sceneEmpty}
+          issued={issuedDrawings.map((drawing) => ({
+            id: drawing.id,
+            version: drawing.version,
+            label: drawing.label,
+            createdAt: drawing.createdAt.toISOString(),
+          }))}
         />
         <CuttingPlanPanel
           projectId={project.id}

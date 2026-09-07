@@ -533,15 +533,17 @@ Future:
 
 ### Diagram
 
-Current:
-- projectId
-- type
-- imageUrl
-- dimensionsData
-- createdAt
+- id, projectId, version, views (Json), svg (text), sourceSnapshot (Json),
+  imageObjectKey, label, createdAt
+
+An ISSUED technical drawing: a numbered snapshot captured deliberately. The
+workspace renders drawings live from current data, so nothing on screen can be
+stale; this table exists because a production document must point at the drawing
+a workshop was actually given. The SVG is stored as text rather than regenerated
+on read, so an issued drawing stays byte-identical even if the renderer changes.
 
 Future:
-- front/side/top/back/section views
+- section views
 - structured geometry references
 
 ### Mockup
@@ -1856,3 +1858,42 @@ the canvas or approves anything.
 tail counts as reusable stock. The money is then the whole signal. This follows
 correctly from T9's rule that a keepable remnant is not a loss, and a test
 asserts both halves so the behaviour is not mistaken for a bug later.
+
+### T11 — Structured Technical Drawings (Phase 11)
+
+**Drawings are generated from geometry, never from image generation.** Every
+coordinate traces to a millimetre the user stated. The sheet itself carries the
+statement ARCHITECTURE §13 requires — "technical reference drawing… not a
+certified engineering drawing… verify dimensions before fabrication" — printed
+on the drawing rather than only in the UI around it, because the printed sheet
+is what reaches a workshop.
+
+**Depth is per object and optional.** The canvas is a front elevation, so front
+and back need nothing extra. Side and top need depth, which genuinely differs per
+part: a 3 mm alucobond skin, a 40 mm frame, 80 mm built-up letters. Applying one
+project-level depth to everything would draw those three as identical slabs — a
+side view that looks precise and is wrong is worse than no side view. Objects
+without a depth are omitted from those views and named.
+
+**Depth-view stacking is an admitted approximation.** The scene records no
+z-position, so parts are stacked outward from the wall in scene order. That is
+the only assumption which adds no false precision about stand-off distance.
+
+**Numbered callouts, not inline labels.** Rendering a realistic sheet showed two
+failures that inline labels cannot survive: concentric parts (a panel inside its
+frame) had colliding labels, and a top view of an 8 m sign 123 mm deep is a thin
+strip in which no text fits at all. Parts now carry a number and a legend beneath
+the view, which is how technical drawings have always solved this and works at
+any aspect ratio. Callout positions are collision-stacked as well, since numbers
+on concentric parts land within a few units of each other.
+
+**Live rendering plus explicit issuing.** The panel always renders from current
+data and therefore cannot be stale. Issuing stores a numbered snapshot with its
+rendered SVG and a copy of the scene it came from. A production document (T14)
+will reference an issued drawing, so the workshop copy and the record cannot
+drift apart.
+
+**Sections are deliberately not implemented.** A section requires a cut plane
+and knowledge of internal construction that the scene does not hold. Drawing one
+would mean inventing internal structure — Layer 4 work, and only once the
+geometry can support it.

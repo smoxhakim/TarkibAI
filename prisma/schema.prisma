@@ -401,14 +401,42 @@ model CuttingPlan {
   @@index([projectId])
 }
 
+/// An issued technical drawing — a numbered snapshot of the views as they were
+/// when someone deliberately captured them.
+///
+/// The workspace always renders drawings live from current data, so what is on
+/// screen can never be stale. This table exists for the other requirement: a
+/// production document must point at the drawing a workshop was actually given,
+/// which live rendering cannot guarantee.
 model Diagram {
-  id             String   @id @default(uuid())
-  projectId      String
-  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type           String   @default("front_view")
-  imageUrl       String
-  dimensionsData Json
-  createdAt      DateTime @default(now())
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Sequential per project, so a workshop can be told "drawing 3".
+  version Int
+
+  /// Views included in this issue, e.g. ["front","side","top"].
+  views Json
+
+  /// The rendered SVG. Stored as text so an issued drawing is reproducible
+  /// exactly, independent of any later change to the renderer.
+  svg String
+
+  /// The scene and spec the drawing was made from, for auditability.
+  sourceSnapshot Json
+
+  /// R2 key for a rendered PNG, used by production documents. Null when storage
+  /// is not configured; the stored SVG remains the real artefact.
+  imageObjectKey String?
+
+  /// Free-text note, e.g. "issued to workshop".
+  label String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
 }
 
 model Mockup {

@@ -51,6 +51,17 @@ export const sceneObjectSchema = z.object({
   widthMm: positiveMm,
   heightMm: positiveMm,
 
+  /**
+   * Depth into the wall, optional.
+   *
+   * The canvas is a front elevation, so depth is not needed to draw it. It is
+   * needed for side and top views, and it genuinely differs per part — a 3 mm
+   * alucobond skin, a 40 mm frame, 80 mm built-up letters. Objects without a
+   * depth are omitted from those views and the drawing says which, rather than
+   * inventing a thickness that would look precise and be wrong.
+   */
+  depthMm: z.number().int().positive().max(1_000_000).nullable().optional(),
+
   /** Degrees clockwise. Whole degrees only — fabrication does not need finer. */
   rotationDeg: z.number().int().min(-360).max(360).default(0),
 
