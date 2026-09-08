@@ -727,21 +727,71 @@ changes; the team sees it in the app; and the link can be withdrawn. ✅
 
 # Phase 20 — Advanced Business Platform
 
-## T20 — Commercial and Operational Features
+## T20 — Commercial and Operational Features ✅ COMPLETE (scoped)
 
-Potential capabilities:
+Eleven "potential capabilities" were listed, several of which are whole
+products. Four shipped, chosen because together they close one loop the product
+left open: you could quote a job but not see what to order for it, or whether
+your quoting makes money. The rest are recorded below with reasons rather than
+built shallowly.
 
-- [ ] Advanced quotation templates
-- [ ] More pricing models
-- [ ] Supplier management
-- [ ] Purchase planning
-- [ ] Inventory integrations
-- [ ] Advanced analytics
-- [ ] Project profitability
-- [ ] Client CRM
-- [ ] Production workflow tracking
-- [ ] Billing and subscription management
-- [ ] Usage-based limits
+- [x] Supplier management (`Supplier`, workspace-scoped, linked from materials)
+- [x] Purchase planning (grouped by supplier, from the engine's own quantities)
+- [x] Project profitability (projected — see the honesty note below)
+- [x] Advanced analytics (pipeline, quote outcomes, win rate, projected margin)
+- [x] Prices in the purchase list follow `cost.view`, by omission not filtering
+- [x] Tests (16 unit, 18 integration)
+
+### The honesty constraint this milestone turned on
+
+The product knows what its engines **estimated** and what a client was
+**quoted**. It does not know what a job **cost** — nothing in it records
+invoices, delivery notes, hours worked or material actually consumed. So:
+
+- Every figure is named `projected`, the type carries `isProjection: true`, and
+  the panel says so in words.
+- A project missing a cost or a quote reports which, and never substitutes zero.
+- Workspace totals state how many projects they are based on and how many were
+  excluded.
+- A business that has issued no quotes has an **unknown** win rate, not 0%.
+
+Recording actual spend is a real feature and would make these figures actual.
+It is not this one, and labelling an estimate as a result would be exactly the
+fabrication this product exists to avoid.
+
+### Deliberately NOT built
+
+- [ ] **Billing and subscription management.** Deferred indefinitely by the
+      product owner (2026-09-08), and the provider is not Stripe: Stripe does
+      not support Moroccan businesses as merchants, so the scaffold's
+      assumption was wrong. Realistic options are local — CMI for cards, bank
+      transfer, cash on delivery — and choosing needs the business's own
+      banking arrangements. `User.stripeCustomerId` and `subscriptionPlan`
+      remain unused columns from the original scaffold; rename or drop them
+      when a provider is chosen.
+- [ ] **Usage-based limits.** Depends on billing; enforcing limits without a
+      plan to enforce them against would just lock people out.
+- [ ] **Inventory integrations.** External systems, none of which the user has
+      named. An integration built against an imagined API is not an integration.
+- [ ] **Client CRM.** Quotes already carry client details. A separate client
+      entity would duplicate them without a stated need, and getting the
+      duplication wrong is worse than not having it.
+- [ ] **More pricing models.** The engine has percent, fixed and manual.
+      Nothing has yet required a fourth, and a pricing model added speculatively
+      is a rule nobody validated against real jobs.
+- [ ] **Advanced quotation templates.** One template that works and is tested
+      beats two that are half-checked; a second layout should follow a real
+      request.
+- [ ] **Production workflow tracking beyond the existing stages.** The project
+      already moves intake → spec_approved → calculated → quoted →
+      production_ready. Stages past the workshop door (cut, assembled,
+      installed) describe a process this product does not observe, so they would
+      be a status somebody has to remember to update rather than a fact.
+
+### Definition of done (chosen for this milestone)
+
+A user can see what to order and from whom, and whether their quoting is
+expected to make money — with every figure labelled for what it actually is. ✅
 
 ---
 
@@ -830,14 +880,29 @@ Completed:
 - [x] **T17 — Domain Framework** (Phase 17)
 - [x] **T18 — Teams and Permissions** (Phase 18)
 - [x] **T19 — Client and Team Collaboration** (Phase 19)
+- [x] **T20 — Commercial and Operational Features** (Phase 20, scoped)
 
 Active milestone:
 
-- [ ] None. T20 has not been started.
+- [ ] None. T21 has not been started.
 
 Next milestone:
 
-- [ ] **T20 — Commercial and Operational Features** (Phase 20)
+- [ ] **T21 — Advanced AI** (Phase 21)
+
+### T20 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 487 passed |
+| Integration tests | 306 passed against Neon |
+| Production build | passed, 84 routes |
+| Migrations | 24 applied |
+| Price visibility | tested: a production role sees quantities, no line total, no subtotal, and no price anywhere in the payload |
+| No invented figures | tested: a missing cost or quote is named, not zeroed; a group with an uncalculable line has no subtotal; a business with no quotes has a null win rate |
+| Isolation | tested: suppliers are workspace-scoped, and a supplier cannot be attached to another business's material |
 
 ### T19 verification record
 

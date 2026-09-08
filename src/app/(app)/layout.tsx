@@ -35,6 +35,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                   <Link href="/materials" className="text-ink-muted transition-colors hover:text-ink">
                     {strings.materials.navLink}
                   </Link>
+                  <Link href="/suppliers" className="text-ink-muted transition-colors hover:text-ink">
+                    {strings.suppliers.navLink}
+                  </Link>
+                  <Link href="/analytics" className="text-ink-muted transition-colors hover:text-ink">
+                    {strings.analytics.navLink}
+                  </Link>
                   <Link
                     href="/workspace"
                     className="text-ink-muted transition-colors hover:text-ink"

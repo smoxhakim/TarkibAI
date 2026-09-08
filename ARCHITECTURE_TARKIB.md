@@ -67,7 +67,17 @@ The system should remain pragmatic and understandable for a solo founder while b
 
 ### Billing
 
-- Stripe Billing
+**Not chosen, and deliberately open.** Stripe was named here before anyone
+checked whether it fits: Stripe does not support Moroccan businesses as
+merchants, so a Moroccan fabrication shop cannot be paid through it. The
+realistic options are local — CMI for cards, bank transfer, and cash on
+delivery, which is how much of this trade is actually settled.
+
+Choosing between them needs the business's own banking arrangements, so the
+decision waits until billing is genuinely being built rather than being written
+down now and inherited later. `User.stripeCustomerId` survives as an unused
+column from the original scaffold and should be renamed or dropped when a
+provider is chosen.
 
 ### Email
 
@@ -2422,3 +2432,61 @@ audit trail and version capture follow.
 **Marking notifications read is scoped to the caller's own rows**, so an id from
 somewhere else does nothing rather than being rejected — there is no version of
 this where one user changes another's state.
+
+### T20 — Commercial and Operational Features (Phase 20)
+
+**Scope was chosen, and the choice is the first decision worth recording.** The
+phase listed eleven "potential capabilities", several of which are whole
+products. Building all of them shallowly would have produced a screen for each
+and a use for none. What shipped closes one loop the product left open: you
+could quote a job but not see what to order for it or whether your quoting makes
+money. Suppliers, a purchase list, project profitability and workspace analytics
+are that loop; billing, inventory integrations and a CRM are recorded as
+deliberately out, with reasons.
+
+**Profitability is PROJECTED, and the naming says so at every level.** The
+product knows what the engines estimated and what the client was quoted. It does
+not know what the job cost — nothing records invoices, hours worked, or material
+actually consumed. The type carries `isProjection: true`, the field is
+`projectedMarginCents`, and the panel says it in words. Calling this "profit"
+would present an estimate as a result, and a business making decisions on it
+would be trusting a number nothing measured.
+
+**A missing half is named, never zeroed.** A project with a cost and no quote
+reports which is absent. Substituting zero would show the entire estimated cost
+as a loss on a job nobody has priced yet.
+
+**Workspace totals name the subset they cover.** Projects lacking either a cost
+or a quote are excluded and counted separately, because a single "projected
+margin" over an unstated subset reads as a fact and is not one.
+
+**An unknown win rate is unknown, not zero.** A business that has issued no
+quotes has not lost them. Reporting 0% would be a claim about a business that
+has not started.
+
+**The purchase list reads the engine, never recomputes it.** A second place that
+decides how many bars to buy is a second place that can disagree with the first.
+Uncalculable lines are carried with their reason rather than dropped — a list
+that silently omits a material is how somebody arrives at the yard missing half
+the job — and a group containing one has no subtotal, because a total that
+quietly skipped a line reads as a complete order value.
+
+**Prices in the purchase list follow `cost.view`, by omission.** Production buys
+the material and does not see the margin (T18). For them the price field is null
+rather than formatted away, so nothing internal reaches the payload at all. The
+quantities — which are what they actually need to place an order — are
+unaffected. `includePrices` is passed into the pure grouper rather than inferred
+there, because whether somebody may see a cost is a permission and that module
+has no business deciding it.
+
+**Prices are the ones the calculation used**, read from
+`unitPriceCentsSnapshot`, so the order list matches the figures the cost and any
+quote were built from rather than today's price list.
+
+**Suppliers are additive.** `Material.supplier` stays as free text and remains
+the fallback label, so nothing had to be migrated and a material nobody has
+linked still groups under a heading that says no supplier is recorded — rather
+than vanishing from the list.
+
+**Lead time is stated, not inferred.** The product has no delivery history, so
+it asks rather than computing a number that would look derived.
