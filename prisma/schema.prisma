@@ -297,7 +297,14 @@ model Material {
   name           String
   category       String
   customCategory Boolean @default(false)
+  /// Free-text supplier, kept from before T20 so nothing had to be rewritten.
+  /// New work links to a Supplier record instead; this stays as the fallback
+  /// label for a material nobody has linked yet.
   supplier       String?
+
+  /// The supplier this is bought from, when one has been recorded.
+  supplierId  String?
+  supplierRef Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   /// How this material is measured and purchased, which decides which of the
   /// dimension fields below apply and what unitPriceCents refers to.
@@ -911,6 +918,7 @@ model Workspace {
   projects    Project[]
   materials   Material[]
   quotes      Quote[]
+  suppliers   Supplier[]
 
   costSettings  CostSettings?
   quoteSettings QuoteSettings?
@@ -1084,4 +1092,36 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt, createdAt])
+}
+
+/// Somebody the business buys from.
+///
+/// Introduced in T20 because a purchase list is only useful grouped by who you
+/// order it from. Before this, `Material.supplier` was free text — good enough
+/// to print on a production sheet, useless for "what do I need to call Metaux
+/// Casa about". That column stays as a fallback label so nothing had to be
+/// migrated in a hurry.
+model Supplier {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name    String
+  contact String?
+  phone   String?
+  email   String?
+  notes   String?
+
+  /// Typical lead time in days, stated by the user. Never inferred from
+  /// history — the product has no delivery data to infer it from.
+  leadTimeDays Int?
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  materials Material[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, archivedAt])
 }

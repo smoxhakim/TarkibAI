@@ -28,6 +28,9 @@ import { getDomain } from '@/lib/domains/registry';
 import { SharePanel } from '@/components/SharePanel';
 import { CommentsPanel } from '@/components/CommentsPanel';
 import { listComments, listShares } from '@/lib/collaboration/service';
+import { PurchasingPanel } from '@/components/PurchasingPanel';
+import { ProfitabilityPanel } from '@/components/ProfitabilityPanel';
+import { getProjectProfitability, getPurchasePlan } from '@/lib/commercial/service';
 import {
   listLinearCuts,
   listLinearPlans,
@@ -106,10 +109,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     hasProjectPermission(project.id, user.id, 'quote.create'),
     hasProjectPermission(project.id, user.id, 'project.edit'),
   ]);
-  const [shares, comments] = await Promise.all([
+  const [shares, comments, purchasePlan] = await Promise.all([
     listShares(project.id, user.id),
     listComments(project.id, user.id),
+    getPurchasePlan(project.id, user.id),
   ]);
+  // Only fetched for a reader who may see costs; the panel is simply absent
+  // otherwise rather than rendering an empty shell.
+  const profitability = canSeeCost ? await getProjectProfitability(project.id, user.id) : null;
 
   const [costView, expenses, sceneView, proposals, cuttingPieces, cuttingPlans] =
     await Promise.all([
@@ -465,6 +472,37 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             producedPackageVersions: version.producedPackageVersions,
           }))}
         />
+        <PurchasingPanel
+          groups={purchasePlan.groups.map((group) => ({
+            supplierName: group.supplierName,
+            subtotalCents: group.subtotalCents,
+            incomplete: group.incomplete,
+            lines: group.lines.map((line) => ({
+              materialName: line.materialName,
+              stockSize: line.stockSize,
+              unitsToPurchase: line.unitsToPurchase,
+              lineTotalCents: line.lineTotalCents,
+              unsupportedReason: line.unsupportedReason,
+              warnings: line.warnings,
+            })),
+          }))}
+          showsPrices={purchasePlan.showsPrices}
+          emptyReason={purchasePlan.emptyReason}
+          currency={currency}
+        />
+        {profitability ? (
+          <ProfitabilityPanel
+            currency={currency}
+            data={{
+              projectedMarginCents: profitability.projectedMarginCents,
+              projectedMarginBp: profitability.projectedMarginBp,
+              internalTotalCents: profitability.internalTotalCents,
+              quotedSubtotalCents: profitability.quotedSubtotalCents,
+              recordedExpensesCents: profitability.recordedExpensesCents,
+              missing: profitability.missing,
+            }}
+          />
+        ) : null}
         <SharePanel
           projectId={project.id}
           canShare={canShare}

@@ -309,6 +309,7 @@ src/
     versions/             # project snapshots, deterministic diff, restore
     workspaces/           # membership, roles, permissions, invitations
     collaboration/        # client share links, the project thread, notifications
+    commercial/           # suppliers, purchase planning, projected margin, analytics
     domains/              # trade profiles: required fields, palette, bounds, prompt
     validation/           # integrity checks, document gates, content sniffing
     audit/                # append-only record of consequential actions
@@ -696,7 +697,26 @@ business's document, and their client is not our user.
 No email is sent for shares or invitations. There is no mail provider yet, so
 the link is handed back to the sender and the interface says so plainly.
 
-**Next: T20 — Commercial and Operational Features (Phase 20)**
+T20 adds: the commercial loop the product left open. Suppliers as records, a
+purchase list grouped by who you order from — built from the quantities the
+engines already computed, never recomputed — projected margin per project, and
+workspace analytics including a win rate drawn from real client approvals.
+
+Everything here is labelled for what it is. The margin is **projected**: the
+product knows what it estimated and what it quoted, and does not know what a job
+actually cost, because nothing records invoices or hours. A project missing a
+cost or a quote says which rather than counting a zero, workspace totals name
+how many projects they cover, and a business that has issued no quotes has an
+unknown win rate rather than 0%.
+
+Prices in the purchase list follow cost visibility: production sees the
+quantities they need to order and no prices at all.
+
+Eleven capabilities were listed for this phase; four shipped. Billing,
+inventory integrations, a CRM, extra pricing models and extra quote templates
+are recorded in TODO as deliberately out, with reasons.
+
+**Next: T21 — Advanced AI (Phase 21)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.
