@@ -3,6 +3,7 @@ import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
 import { isStorageConfigured } from '@/lib/storage/config';
+import { inlineStoredImage } from '@/lib/pdf/image';
 import { buildObjectKey } from '@/lib/storage/keys';
 import { Prisma } from '@/generated/prisma/client';
 import type { Quote, QuoteLine, QuoteSettings } from '@/generated/prisma/client';
@@ -12,7 +13,7 @@ import {
   formatQuoteNumber,
   subtotalDivergence,
 } from './engine';
-import { assertClientSafe, type EmbeddedImage, type QuoteDocument } from './document';
+import { assertClientSafe, type QuoteDocument } from './document';
 import { getQuoteSettings } from './settings-service';
 import type { CreateQuotePayload, UpdateQuotePayload } from './schema';
 
@@ -400,43 +401,6 @@ function readIssuerSnapshot(value: unknown): IssuerSnapshot | null {
 }
 
 /**
- * Fetches an image from storage and inlines it.
- *
- * A PDF cannot follow a signed URL, so the bytes have to be in the document.
- * Downscaled first: a mockup can be several megabytes, and a quote emailed to a
- * client should not be.
- *
- * Failure is non-fatal. A quote without its logo is still a correct quote; a
- * quote that refuses to render because a decorative image is missing is not.
- */
-async function inlineImage(
-  objectKey: string | null,
-  maxWidth: number
-): Promise<EmbeddedImage | null> {
-  if (!objectKey || !isStorageConfigured()) return null;
-
-  try {
-    const [{ default: sharp }, { getObjectBytes }] = await Promise.all([
-      import('sharp'),
-      import('@/lib/storage/r2'),
-    ]);
-
-    const raw = await getObjectBytes(objectKey);
-    // PNG throughout, so a logo with a transparent background stays transparent
-    // over the page rather than gaining a white box.
-    const resized = await sharp(raw)
-      .resize({ width: maxWidth, withoutEnlargement: true })
-      .png()
-      .toBuffer();
-
-    return { dataUri: `data:image/png;base64,${resized.toString('base64')}`, mimeType: 'image/png' };
-  } catch (error) {
-    console.error('[quotes] could not inline an image', objectKey, error);
-    return null;
-  }
-}
-
-/**
  * Builds the client-safe document for a quote.
  *
  * Every field is read from the quote and the issuer block. The project's cost
@@ -465,8 +429,8 @@ export async function buildQuoteDocument(
     : null;
 
   const [logo, mockup] = await Promise.all([
-    inlineImage(issuer.logoObjectKey, 400),
-    inlineImage(mockupKey, 1200),
+    inlineStoredImage(issuer.logoObjectKey, 400),
+    inlineStoredImage(mockupKey, 1200),
   ]);
 
   const document: QuoteDocument = {

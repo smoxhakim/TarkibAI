@@ -12,6 +12,8 @@
  * waste. See `INTERNAL_FIELD_NAMES` for the guard that enforces it.
  */
 
+import type { EmbeddedImage } from '@/lib/pdf/image';
+
 export type QuoteDocumentLine = {
   position: number;
   description: string;
@@ -19,12 +21,6 @@ export type QuoteDocumentLine = {
   unitLabel: string | null;
   unitPriceCents: number;
   lineTotalCents: number;
-};
-
-/** An image already resolved to bytes, since a PDF cannot follow a signed URL. */
-export type EmbeddedImage = {
-  dataUri: string;
-  mimeType: string;
 };
 
 export type QuoteIssuer = {

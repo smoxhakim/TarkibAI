@@ -15,7 +15,7 @@ import { calculateProjectMaterials } from '@/lib/calc/materials/service';
 import { computeProjectCost, updateCostSettings } from '@/lib/calc/costs/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { GROUP_SEPARATOR, formatMoney } from './format';
-import { extractPdfText } from './pdf-text';
+import { extractPdfText } from '@/lib/pdf/text';
 import { getQuoteSettings, updateQuoteSettings } from './settings-service';
 import {
   buildQuoteDocument,

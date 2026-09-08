@@ -9,7 +9,8 @@ import {
 } from '@react-pdf/renderer';
 import type { StyleProp } from '@react-pdf/types';
 import { assertClientSafe, type QuoteDocument, type QuoteDocumentLine } from './document';
-import { formatDate, formatMoney, formatQuantity } from './format';
+import { formatDate } from '@/lib/pdf/format';
+import { formatMoney, formatQuantity } from './format';
 
 /**
  * The client quotation template.

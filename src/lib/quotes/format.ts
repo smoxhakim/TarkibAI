@@ -43,11 +43,3 @@ export function parseMoney(input: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   return Math.round(Number(trimmed) * 100);
 }
-
-/** "7 September 2026" — spelled out, because 07/09 is ambiguous across locales. */
-export function formatDate(value: Date | string | null): string {
-  if (value === null) return '';
-  const date = typeof value === 'string' ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-}

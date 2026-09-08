@@ -621,14 +621,46 @@ model ProjectExpense {
   @@index([projectId])
 }
 
+/// A generated production package for the workshop.
+///
+/// Unlike Quote, this model carries no structured data of its own. The package
+/// is a rendering of project state that already exists — drawing, material
+/// lines, cutting plans — so what is frozen here is a reference to that state
+/// plus the notes written for the shop floor at generation time.
+///
+/// No money appears on this model or on the document it produces. The workshop
+/// needs quantities and specifications, not prices, and a package that reaches
+/// a subcontractor should not carry the business's costs with it.
 model Document {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type      String // client_quote | production
-  version   Int
-  pdfUrl    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// production. Client quotations are their own model, because they carry
+  /// structured commercial data this one deliberately does not.
+  type String @default("production")
+
+  /// Sequential per project and type, so a workshop can be told
+  /// "production package 2".
+  version Int
+
+  /// Instructions for the shop floor, written when the package is generated and
+  /// frozen onto it.
+  notes String?
+
+  /// R2 object key for the rendered PDF. Never a URL: reads are signed and
+  /// short-lived, like every other stored object.
+  pdfObjectKey String?
+
+  /// What the package was built from — spec version, drawing version, material
+  /// calculation time, plan ids — so a sheet on a bench can be traced back to
+  /// the project state that produced it.
+  sourceSnapshot Json?
+
   createdAt DateTime @default(now())
+
+  @@unique([projectId, type, version])
+  @@index([projectId, createdAt])
 }
 
 /// A client-facing quotation.

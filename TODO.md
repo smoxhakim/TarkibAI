@@ -456,24 +456,42 @@ A user can generate and download a professional client quotation without leaking
 
 # Phase 14 — Production Documentation
 
-## T14 — Production PDF
+## T14 — Production PDF ✅ COMPLETE
 
-- [ ] Production template
-- [ ] Technical drawings
-- [ ] Material list
-- [ ] Cutting plans
-- [ ] Dimensions
-- [ ] Component list
-- [ ] Assembly guidance
-- [ ] Production notes
-- [ ] PDF generation
-- [ ] Version references
-- [ ] R2 storage
-- [ ] Secure download
+- [x] Production template (`@react-pdf/renderer`, portrait cover, landscape drawing page)
+- [x] Technical drawings (the issued Diagram, rasterised at full landscape measure)
+- [x] Material list (stock size, thickness, supplier, required, buy, waste)
+- [x] Cutting plans (one figure per sheet so piece labels stay legible)
+- [x] Dimensions (from the specification, with the unit that was stated)
+- [x] Component list (from the specification's own components)
+- [x] Assembly guidance — recorded mounting method, surface and height only
+- [x] Production notes (written at generation time, frozen onto the package)
+- [x] PDF generation (synchronous; previews render on demand and are never stored)
+- [x] Version references (spec version and approval, drawing version, calculation time)
+- [x] R2 storage
+- [x] Secure download (signed, ownership-checked redirect)
+- [x] Gaps printed on the document rather than hidden
+- [x] `assertNoPricing` — no money on a workshop copy, by construction
+- [x] Tests (32 unit, 18 integration, including a costed-project leak test)
+
+### Deferred out of T14 (deliberately)
+
+- [ ] Inferred assembly steps, tooling or build order — the application does not
+      know how a sign is assembled, and a workshop acts on such a sequence
+      directly. Only recorded mounting details are printed.
+- [ ] Section views — still unimplemented in T11, so the package cannot carry them
+- [ ] Per-piece cut lists as text tables — the plan figures carry the labels;
+      a redundant text list would be a second source of truth
+- [ ] Regenerating a package in place — a new package gets the next number, so
+      a sheet already on a bench is never silently superseded
+- [ ] Moving generation to Inngest — the work is local rasterisation of stored
+      data, well inside a request. Revisit if projects carry enough plans to
+      approach the limit.
+- [ ] Arabic-script rendering — the same embedded-font gap as T13
 
 ### Definition of done
 
-The production team receives a visual fabrication package containing drawings, material information, and cutting instructions.
+The production team receives a visual fabrication package containing drawings, material information, and cutting instructions. ✅
 
 ---
 
@@ -685,14 +703,34 @@ Completed:
 - [x] **T11 — Structured Technical Drawings** (Phase 11)
 - [x] **T12 — AI Mockups** (Phase 12) — pending live provider verification
 - [x] **T13 — Client Quote System** (Phase 13)
+- [x] **T14 — Production PDF** (Phase 14)
 
 Active milestone:
 
-- [ ] None. T14 has not been started.
+- [ ] None. T15 has not been started.
 
 Next milestone:
 
-- [ ] **T14 — Production PDF** (Phase 14)
+- [ ] **T15 — Project Versioning** (Phase 15)
+
+### T14 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 355 passed |
+| Integration tests | 189 passed against Neon |
+| Production build | passed, 55 routes |
+| Migrations | 16 applied |
+| Package PDF | generated from real project state and inspected page by page |
+| Layout | `countPages` guards against the blank page an overflow leaves behind |
+| Pricing separation | costed project rendered; no internal or client figure on the page |
+
+**Two real defects were found by looking at the rendered pages, not by the
+tests.** A five-sheet cutting plan was shrunk to a quarter of the measure with
+unreadable piece labels, and the drawing page left a blank page behind it. Every
+assertion passed in both cases.
 
 ### T13 verification record
 

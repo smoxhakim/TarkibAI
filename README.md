@@ -305,7 +305,9 @@ src/
     design/               # AI design proposals and the approval gate
     quotes/               # quote engine, client-safe document, PDF template,
                           # settings and issuing
-    pdf/                  # (stub) Phase 14 — production package
+    production/           # workshop package: spec readers, assembly, template
+    pdf/                  # shared document layer: image inlining, formatting,
+                          # and PDF text/layout inspection used by the tests
     geometry/, mockup/    # (planned)
 
 inngest/                  # (planned) Phase 12
@@ -416,6 +418,14 @@ npm install
 ```bash
 npm run prisma:migrate
 ```
+
+**Restart `next dev` after a migration.** `src/lib/db.ts` caches the Prisma
+client on `globalThis` in development, so that a hot reload does not open a new
+Neon connection pool each time. A migration regenerates the client, but the
+cached *instance* is still the one built from the previous schema — so a model
+added by the migration surfaces as
+`Cannot read properties of undefined (reading 'findMany')` until the server is
+restarted. Nothing is wrong with the code when this happens.
 
 ## 3. Run
 
@@ -583,11 +593,23 @@ an accident. Issuing freezes the quote; changing anything means a new quote with
 a new number. Arabic-script text is reported as unrenderable rather than printed
 as blank boxes.
 
-**Next: T14 — Production PDF (Phase 14)**
+T14 adds: the production package. One numbered PDF for the workshop containing
+the issued drawing on a landscape page, the material list with each line's own
+calculation caveats printed beside it, and every cutting plan drawn one sheet
+per figure so the piece labels are readable at the bench. Stored in R2 behind a
+signed download; a preview renders on demand and is never stored.
 
-Not yet implemented. The production document panel remains explicitly labelled
-as unbuilt. Nothing in the product returns a fabricated number or a mocked AI
-reply.
+It carries no prices — the shop floor gets quantities, and a package can end up
+with a subcontractor. Nothing about assembly is inferred: the package prints the
+mounting method somebody recorded, and when none is recorded it says so and
+tells the reader not to assume one. Gaps are printed rather than hidden — no
+drawing issued, no cutting plan computed, specification still a draft — and only
+a project with neither a drawing nor a calculated material line is refused.
+
+**Next: T15 — Project Versioning (Phase 15)**
+
+Not yet implemented. Nothing in the product returns a fabricated number or a
+mocked AI reply.
 
 A milestone is complete only when the functionality works end to end — not when
 UI files or API stubs exist.

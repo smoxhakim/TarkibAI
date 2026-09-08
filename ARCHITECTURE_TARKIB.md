@@ -850,18 +850,21 @@ an issued quote is written to R2, and the stored file is what a download
 returns — re-rendering it could produce something subtly different from the
 document the client received.
 
-### Production pipeline
+### Production pipeline (implemented in T14)
 
 Project
- -> approved technical state
- -> diagrams
- -> material list
- -> cutting plans
- -> production notes
+ -> issued Diagram + calculated ProjectMaterial + CuttingPlan + approved spec
+ -> buildProductionDocument  (ProductionDocument: no priced field exists on it)
+ -> assertNoPricing
  -> production template
- -> PDF
+ -> @react-pdf/renderer
  -> R2
  -> signed download URL
+
+A preview renders on demand and is never stored, so the gaps can be read on the
+page before a version number is committed. A generated package is numbered,
+stored, and downloaded from storage: the sheet on the bench and the record in
+the system must be the same document.
 
 Documents should carry a project/version reference so users can identify which project state produced them.
 
@@ -2035,3 +2038,79 @@ said otherwise. `maxHeight` caps the bogus measurement; an explicit `height`
 makes the text vanish instead. `offPagePlacements` reads the transforms back and
 fails the test when anything lands off the paper, because no assertion about
 text content can catch this class of defect.
+
+### T14 — Production Package (Phase 14)
+
+**`Document` became the production record; `Quote` stayed its own model.** T13
+left this open. A quote carries structured commercial data that must be frozen —
+client block, priced lines, tax rate. A production package carries none of its
+own: it is a rendering of state that already exists, so what is stored is a
+reference to that state plus the notes written at generation time. The empty
+`pdfUrl` column was dropped for `pdfObjectKey`, because no URL is stored
+anywhere in this application; the table had never been written to.
+
+**No money reaches the workshop copy.** The shop floor needs quantities and
+specifications, not prices, and a package can end up with a subcontractor.
+`ProductionDocument` has no priced field and `assertNoPricing` throws on the way
+into the renderer, the same construction as the quote's client-safe boundary
+applied to a different audience. An integration test costs a project first, so
+the figures it looks for are ones that would be recognisable if they leaked.
+
+**Nothing about assembly is inferred.** The application does not know how a sign
+is built. The package prints the mounting method, surface and height somebody
+actually recorded, and when the spec records none it says so and tells the
+reader not to assume one. A plausible-looking build sequence would be the most
+dangerous invented content in the product: unlike a wrong price, a workshop acts
+on it directly.
+
+**Gaps are printed, not hidden and not fatal.** A package can be built from a
+drawing alone or a material list alone — refusing would be unhelpful — but the
+document states what it does not contain: no drawing issued, no cutting plan
+computed, and in that case an explicit instruction not to infer cut sizes from
+the drawing. Only a project with neither a drawing nor a calculated line is
+refused, because that package would say nothing.
+
+**Anything telling the reader NOT to do something gets the alert rule.** In the
+first draft "no mounting method is recorded — do not assume one" rendered in the
+same muted italic as an empty field, which read as incidental. Instructions and
+absent values are now visually distinct.
+
+**Calculation caveats travel to the bench.** T4's linear count is a minimum, and
+that caveat is printed beside the purchase figure rather than left in the app.
+Someone ordering from the sheet is exactly who needs it.
+
+**Drawings render on a landscape page.** A drawing sheet is the page somebody
+squints at, and landscape A4 gives 762pt of measure against 515pt — a 47% larger
+figure, which is the difference between a readable callout legend and a
+decorative one.
+
+**A cutting plan is split one image per sheet, and this was a real defect.** The
+plan renderer stacks every sheet into one tall figure. Placed on a page, a
+five-sheet plan is 1:2.7, so fitting it to the page height shrinks it to about a
+quarter of the measure and takes the piece labels with it — a cutting plan
+nobody can cut from. Every test passed; the PDF was valid; the document was
+useless. Split per sheet each figure is roughly 2:1 and fills the measure. The
+renderer keeps the correct "Sheet 3 of 5" label because it reads the sheet's own
+index and the plan's total, not the length of the array handed to it.
+
+**Height caps are a backstop, never the normal case.** The original bug was a
+300pt cap that bound on ordinary plans. Plan images are now sized by width, with
+a cap high enough that only a pathological stock aspect reaches it, and the
+drawing gets an explicit height so it always occupies exactly one page.
+
+**`countPages` guards the layout.** An overflowing block does not raise an error
+in react-pdf — it silently leaves an empty page behind, and every assertion
+about text still passes because the text is all on the pages before it. The
+count caught a stray page break under the empty-cutting-plans branch that visual
+inspection had rationalised away.
+
+**Generation is synchronous.** The heavy part is rasterising the drawing and
+each sheet, which run together and come from data already in the database — no
+model call, no third-party API. This is the operation ARCHITECTURE 17 has in
+mind for the job runner if projects ever carry enough plans to approach the
+request limit; it does not need it yet.
+
+**The PDF extractor learned WinAnsi.** react-pdf writes an em dash as the single
+byte 0x97, which Latin-1 decodes to an unprintable control character. An
+assertion on "led — halo-lit" then failed against a PDF that rendered it
+perfectly, so the extractor now maps the 0x80-0x9F range.

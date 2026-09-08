@@ -65,19 +65,35 @@ function readShownText(block: string): string {
   return parts.join('');
 }
 
+/**
+ * WinAnsiEncoding's 0x80-0x9F range, which Latin-1 leaves as control codes.
+ *
+ * react-pdf writes text in WinAnsi, so an em dash arrives as the single byte
+ * 0x97. Decoding straight to Latin-1 turns it into an unprintable character and
+ * an assertion on "a — b" then fails against a PDF that renders it perfectly.
+ */
+const WIN_ANSI_HIGH: Record<number, string> = {
+  0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…', 0x86: '†', 0x87: '‡',
+  0x88: 'ˆ', 0x89: '‰', 0x8a: 'Š', 0x8b: '‹', 0x8c: 'Œ', 0x8e: 'Ž', 0x91: '\u2018',
+  0x92: '\u2019', 0x93: '\u201c', 0x94: '\u201d', 0x95: '•', 0x96: '–', 0x97: '—',
+  0x98: '˜', 0x99: '™', 0x9a: 'š', 0x9b: '›', 0x9c: 'œ', 0x9e: 'ž', 0x9f: 'Ÿ',
+};
+
+const fromCharCode = (code: number): string => WIN_ANSI_HIGH[code] ?? String.fromCharCode(code);
+
 function decodeHex(hex: string): string {
   const clean = hex.replace(/\s+/g, '');
   const even = clean.length % 2 === 0 ? clean : `${clean}0`;
   let out = '';
   for (let i = 0; i < even.length; i += 2) {
-    out += String.fromCharCode(parseInt(even.slice(i, i + 2), 16));
+    out += fromCharCode(parseInt(even.slice(i, i + 2), 16));
   }
   return out;
 }
 
 function unescapeLiteral(value: string): string {
   return value
-    .replace(/\\([0-7]{1,3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))
+    .replace(/\\([0-7]{1,3})/g, (_, octal) => fromCharCode(parseInt(octal, 8)))
     .replace(/\\([nrtbf()\\])/g, (_, char) => {
       const map: Record<string, string> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' };
       return map[char] ?? char;
@@ -126,4 +142,17 @@ export function offPagePlacements(pdf: Buffer): number[] {
   }
 
   return found;
+}
+
+/**
+ * Number of pages in a PDF.
+ *
+ * A layout mistake in react-pdf often shows up as an extra page rather than an
+ * error: a block that overflows its page leaves an empty one behind it, and
+ * every assertion about text still passes because the text is all present on
+ * the pages before it. Counting pages is the cheapest way to catch that.
+ */
+export function countPages(pdf: Buffer): number {
+  // `/Type /Pages` is the tree node, not a page; the negative lookahead skips it.
+  return [...pdf.toString('latin1').matchAll(/\/Type\s*\/Page(?![sA-Za-z])/g)].length;
 }
