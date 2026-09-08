@@ -306,6 +306,7 @@ src/
     quotes/               # quote engine, client-safe document, PDF template,
                           # settings and issuing
     production/           # workshop package: spec readers, assembly, template
+    versions/             # project snapshots, deterministic diff, restore
     pdf/                  # shared document layer: image inlining, formatting,
                           # and PDF text/layout inspection used by the tests
     geometry/, mockup/    # (planned)
@@ -606,7 +607,23 @@ tells the reader not to assume one. Gaps are printed rather than hidden — no
 drawing issued, no cutting plan computed, specification still a draft — and only
 a project with neither a drawing nor a calculated material line is refused.
 
-**Next: T15 — Project Versioning (Phase 15)**
+T15 adds: version history. A snapshot of the whole project — specification,
+canvas, material lines, cost and document references — is recorded whenever a
+specification is approved, a design accepted, a quote issued or a package
+generated, and whenever you save one deliberately. Any two versions can be
+compared, or a version compared against the project as it stands.
+
+The comparison is computed, not summarised: same two snapshots in, same diff
+out, no model involved. Sections a version never captured report that they
+cannot be compared rather than claiming the work was deleted.
+
+Versions are append-only. Restoring writes a new draft specification and
+restores the canvas; it does not restore calculations, because their numbers
+came from the specification you are moving away from — they go stale instead.
+Issued quotes and generated packages keep pointing at the state they were built
+from, which is the promise the whole system rests on.
+
+**Next: T16 — Validation and Safety Layer (Phase 16)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.

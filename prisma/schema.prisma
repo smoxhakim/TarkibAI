@@ -198,17 +198,55 @@ model ProjectSpec {
   @@index([projectId, createdAt])
 }
 
+/// A restorable snapshot of a whole project at one moment.
+///
+/// Written at the points where something became authoritative — a specification
+/// approved, a design accepted, a quote issued, a package generated — and
+/// whenever the user asks for one. Deliberately NOT written on every material
+/// or cost recalculation: those run often and are already auditable at row
+/// level through their own input snapshots, and a timeline flooded with them
+/// would hide the moments that matter.
+///
+/// Versions are append-only. Restoring writes a new draft and a new version; it
+/// never edits or removes an earlier one, because documents already issued
+/// refer back to the state recorded here.
 model ProjectVersion {
-  id            String   @id @default(uuid())
+  id            String  @id @default(uuid())
   projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versionNumber Int
   label         String
-  specSnapshot  Json
-  costSnapshot  Json?
-  createdAt     DateTime @default(now())
+
+  /// spec_approved | design_approved | quote_issued | production_generated |
+  /// manual | restored
+  reason String @default("manual")
+
+  /// The user's own note, when they took the snapshot deliberately.
+  note String?
+
+  specSnapshot Json
+
+  /// Internal cost as it stood. Private, like every other cost figure: versions
+  /// are an internal record and never feed a client document.
+  costSnapshot Json?
+
+  /// Canvas scene objects, so a design state can be reviewed and restored.
+  canvasSnapshot Json?
+
+  /// Project material lines with their calculated results and caveats.
+  materialsSnapshot Json?
+
+  /// Which drawings, quotes and packages existed at this point, so a document
+  /// on a desk can be traced to the project state behind it.
+  referenceSnapshot Json?
+
+  createdAt DateTime @default(now())
+
+  quotes    Quote[]
+  documents Document[]
 
   @@unique([projectId, versionNumber])
+  @@index([projectId, createdAt])
 }
 
 model Material {
@@ -657,6 +695,10 @@ model Document {
   /// the project state that produced it.
   sourceSnapshot Json?
 
+  /// The version recorded when this package was generated.
+  projectVersionId String?
+  projectVersion   ProjectVersion? @relation(fields: [projectVersionId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@unique([projectId, type, version])
@@ -708,6 +750,11 @@ model Quote {
   /// The ProjectCost this quote was seeded from, so a quote stays traceable to
   /// the calculation behind it and divergence can be shown to the user.
   sourceCostId String?
+
+  /// The project state this quote was issued from. Set at issue, not at
+  /// creation: a draft is still moving, an issued quote is not.
+  projectVersionId String?
+  projectVersion   ProjectVersion? @relation(fields: [projectVersionId], references: [id], onDelete: SetNull)
 
   /// Optional mockup printed on the quote. References Mockup.id.
   mockupId String?

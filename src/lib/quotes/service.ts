@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
+import { recordVersion } from '@/lib/versions/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { inlineStoredImage } from '@/lib/pdf/image';
 import { buildObjectKey } from '@/lib/storage/keys';
@@ -559,10 +560,24 @@ export async function issueQuote(quoteId: string, userId: string): Promise<Quote
     );
   }
 
+  // Recorded before the quote is linked to it, so an issued quote always names
+  // a version that exists. A failure here must not leave a stored PDF with no
+  // quote pointing at it, so the link is simply absent if it cannot be written.
+  let projectVersionId: string | null = null;
+  try {
+    const version = await recordVersion(quote.projectId, {
+      reason: 'quote_issued',
+      label: `Quote ${quote.number} issued`,
+    });
+    projectVersionId = version.id;
+  } catch (error) {
+    console.error('[quotes] could not record a version for the issued quote', error);
+  }
+
   const [issued] = await Promise.all([
     prisma.quote.update({
       where: { id: quoteId },
-      data: { pdfObjectKey },
+      data: { pdfObjectKey, projectVersionId },
       include: withLines,
     }),
     // The project has reached the quoting stage. Never moved backwards: a
