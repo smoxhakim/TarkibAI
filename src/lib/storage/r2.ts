@@ -106,6 +106,22 @@ export async function getObjectBytes(objectKey: string): Promise<Buffer> {
 }
 
 /**
+ * Reads the first bytes of an object.
+ *
+ * A ranged request, because the only caller sniffs a magic number: pulling a
+ * 20 MB upload through the app server to read sixteen bytes would be a real
+ * cost on every confirmed file.
+ */
+export async function getObjectPrefix(objectKey: string, byteCount: number): Promise<Buffer> {
+  const { client, bucket } = getClient();
+  const result = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: objectKey, Range: `bytes=0-${byteCount - 1}` })
+  );
+  if (!result.Body) throw new Error(`Object has no body: ${objectKey}`);
+  return Buffer.from(await result.Body.transformToByteArray());
+}
+
+/**
  * Writes an object from the server.
  *
  * Distinct from the presigned upload path, which exists so a browser can send

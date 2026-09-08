@@ -3,6 +3,8 @@ import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
 import { recordVersion } from '@/lib/versions/service';
+import { blockersFor, describeBlockers } from '@/lib/validation/service';
+import { recordAudit } from '@/lib/audit/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { inlineStoredImage } from '@/lib/pdf/image';
 import { buildObjectKey } from '@/lib/storage/keys';
@@ -347,6 +349,14 @@ export async function deleteQuote(quoteId: string, userId: string): Promise<void
     );
   }
   await prisma.quote.delete({ where: { id: quoteId } });
+
+  await recordAudit({
+    userId,
+    projectId: quote.projectId,
+    action: 'quote.deleted',
+    summary: `Deleted draft quote ${quote.number}.`,
+    detail: { number: quote.number },
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -513,6 +523,17 @@ export async function issueQuote(quoteId: string, userId: string): Promise<Quote
   const blockers = issueBlockers(quote, settings);
   if (blockers.length > 0) throw badRequest(blockers.join(' '));
 
+  // A quote's price rests on every material line being current. Issuing one
+  // from superseded figures would send a client a number the system already
+  // knows is not the project's — the exact failure the validation layer exists
+  // to stop (T16).
+  const integrity = await blockersFor('quote', quote.projectId, userId);
+  if (integrity.length > 0) {
+    throw badRequest(
+      `This quote would be priced from figures that are no longer current. ${describeBlockers(integrity)}`
+    );
+  }
+
   const issuedAt = new Date();
   const validUntil = new Date(issuedAt);
   validUntil.setDate(validUntil.getDate() + settings.validityDays);
@@ -587,6 +608,20 @@ export async function issueQuote(quoteId: string, userId: string): Promise<Quote
       data: { status: 'quoted' },
     }),
   ]);
+
+  await recordAudit({
+    userId,
+    projectId: quote.projectId,
+    action: 'quote.issued',
+    summary: `Issued quote ${issued.number} to ${issued.clientName} for ${issued.totalCents / 100} ${issued.currency}.`,
+    detail: {
+      quoteId: issued.id,
+      number: issued.number,
+      totalCents: issued.totalCents,
+      currency: issued.currency,
+      projectVersionId,
+    },
+  });
 
   return issued;
 }

@@ -307,6 +307,8 @@ src/
                           # settings and issuing
     production/           # workshop package: spec readers, assembly, template
     versions/             # project snapshots, deterministic diff, restore
+    validation/           # integrity checks, document gates, content sniffing
+    audit/                # append-only record of consequential actions
     pdf/                  # shared document layer: image inlining, formatting,
                           # and PDF text/layout inspection used by the tests
     geometry/, mockup/    # (planned)
@@ -623,7 +625,22 @@ came from the specification you are moving away from — they go stale instead.
 Issued quotes and generated packages keep pointing at the state they were built
 from, which is the promise the whole system rests on.
 
-**Next: T16 — Validation and Safety Layer (Phase 16)**
+T16 adds: one place that asks every integrity question at once — stale figures,
+uncalculable materials, pieces that are not being cut, dimensions that look like
+a slipped decimal — and safeguards built on it. A quote is now refused while its
+price would come from superseded figures; a package is refused while it would
+carry figures that are wrong, though not merely absent, because a package may
+still be built from a drawing alone with its gaps printed on it.
+
+Severity is a promise: a blocker stops a document, a warning proceeds after
+telling you, a note is worth knowing. Plausibility is never a blocker — the tool
+does not decide what you are allowed to build.
+
+Also: an append-only audit trail of approvals, issues, generations, restores and
+removals, which survives the project it describes being deleted; and byte-level
+content sniffing at upload confirmation, deferred from T2.
+
+**Next: T17 — Industry Abstraction (Phase 17)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.

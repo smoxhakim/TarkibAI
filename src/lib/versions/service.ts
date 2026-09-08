@@ -16,6 +16,7 @@ import {
   type VersionSnapshot,
 } from './snapshot';
 import { diffSnapshots, type VersionDiff } from './diff';
+import { recordAudit } from '@/lib/audit/service';
 
 /** Why a version was recorded. */
 export const VERSION_REASONS = [
@@ -398,7 +399,7 @@ export async function restoreVersion(versionId: string, userId: string): Promise
     throw badRequest('This version has no specification snapshot, so there is nothing to restore.');
   }
 
-  return prisma.$transaction(async (tx) => {
+  const recorded = await prisma.$transaction(async (tx) => {
     const latestSpec = await tx.projectSpec.findFirst({
       where: { projectId: version.projectId },
       orderBy: { version: 'desc' },
@@ -443,4 +444,14 @@ export async function restoreVersion(versionId: string, userId: string): Promise
       tx
     );
   });
+
+  await recordAudit({
+    userId,
+    projectId: version.projectId,
+    action: 'version.restored',
+    summary: `Restored the project from version ${version.versionNumber} (${version.label}).`,
+    detail: { restoredFromVersionId: version.id, newVersionId: recorded.id },
+  });
+
+  return recorded;
 }

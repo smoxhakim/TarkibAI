@@ -3,6 +3,7 @@ import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import { applyCommands } from '@/lib/canvas/service';
 import { recordVersion } from '@/lib/versions/service';
+import { recordAudit } from '@/lib/audit/service';
 import { sceneCommandSchema, type SceneCommand } from '@/lib/canvas/schema';
 import { updateDraftSpec } from '@/lib/spec/service';
 import { projectSpecPatchSchema, type ProjectSpecPatch } from '@/lib/spec/schema';
@@ -196,6 +197,14 @@ export async function approveProposal(
     console.error('[design] could not record a version for the approved design', error);
   }
 
+  await recordAudit({
+    userId,
+    projectId,
+    action: 'design.approved',
+    summary: `Approved design change: ${row.summary}`,
+    detail: { proposalId: row.id, commandCount: commands.length },
+  });
+
   return toView(updated);
 }
 
@@ -211,5 +220,14 @@ export async function rejectProposal(
     where: { id: row.id },
     data: { status: 'rejected', decidedAt: new Date() },
   });
+
+  await recordAudit({
+    userId,
+    projectId,
+    action: 'design.rejected',
+    summary: `Rejected design change: ${row.summary}`,
+    detail: { proposalId: row.id },
+  });
+
   return toView(updated);
 }

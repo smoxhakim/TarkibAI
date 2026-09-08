@@ -44,6 +44,10 @@ import { ProductionPanel } from '@/components/ProductionPanel';
 import { getProductionView } from '@/lib/production/service';
 import { VersionsPanel } from '@/components/VersionsPanel';
 import { listVersions } from '@/lib/versions/service';
+import { IntegrityPanel } from '@/components/IntegrityPanel';
+import { getIntegrityReport } from '@/lib/validation/service';
+import { AuditPanel } from '@/components/AuditPanel';
+import { listProjectAudit } from '@/lib/audit/service';
 import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
@@ -107,11 +111,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     renderLiveDrawing(project.id, user.id),
     listIssuedDrawings(project.id, user.id),
   ]);
-  const [mockups, quotes, productionView, versions] = await Promise.all([
+  const [mockups, quotes, productionView, versions, integrity, auditEvents] = await Promise.all([
     listMockups(project.id, user.id),
     listQuotes(project.id, user.id),
     getProductionView(project.id, user.id),
     listVersions(project.id, user.id),
+    getIntegrityReport(project.id, user.id),
+    listProjectAudit(project.id, user.id, { limit: 50 }),
   ]);
 
   // The newest quote is the one being worked on; the rest are history. Only it
@@ -187,6 +193,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             complete: spec.complete,
           }}
         />
+        <IntegrityPanel report={integrity} />
         <DesignProposalsPanel
           projectId={project.id}
           proposals={proposals.map((p) => ({
@@ -428,6 +435,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             createdAt: version.createdAt.toISOString(),
             producedQuoteNumbers: version.producedQuoteNumbers,
             producedPackageVersions: version.producedPackageVersions,
+          }))}
+        />
+        <AuditPanel
+          events={auditEvents.map((event) => ({
+            id: event.id,
+            action: event.action,
+            summary: event.summary,
+            createdAt: event.createdAt.toISOString(),
           }))}
         />
       </div>

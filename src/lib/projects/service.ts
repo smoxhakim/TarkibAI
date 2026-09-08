@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { notFound } from '@/lib/http/api';
 import type { Project } from '@/generated/prisma/client';
 import type { CreateProjectInput, UpdateProjectInput } from './schema';
+import { recordAudit } from '@/lib/audit/service';
 
 /**
  * Loads a project and asserts the caller owns it.
@@ -54,7 +55,18 @@ export async function updateProject(
   if (input.title !== undefined) data.title = input.title;
   if (input.archived !== undefined) data.archivedAt = input.archived ? new Date() : null;
 
-  return prisma.project.update({ where: { id: projectId }, data });
+  const updated = await prisma.project.update({ where: { id: projectId }, data });
+
+  if (input.archived !== undefined) {
+    await recordAudit({
+      userId,
+      projectId,
+      action: input.archived ? 'project.archived' : 'project.restored',
+      summary: `${input.archived ? 'Archived' : 'Restored'} the project "${updated.title}".`,
+    });
+  }
+
+  return updated;
 }
 
 /**
@@ -67,6 +79,17 @@ export async function updateProject(
  * not disappear on a misclick.
  */
 export async function deleteProject(projectId: string, userId: string): Promise<void> {
-  await assertProjectAccess(projectId, userId);
+  const project = await assertProjectAccess(projectId, userId);
   await prisma.project.delete({ where: { id: projectId } });
+
+  // The project link is set null by the delete, so the event survives as a
+  // record that the project existed and was removed. That is the one case where
+  // the trail matters most.
+  await recordAudit({
+    userId,
+    projectId: null,
+    action: 'project.deleted',
+    summary: `Deleted the project "${project.title}" and everything derived from it.`,
+    detail: { projectId, title: project.title },
+  });
 }

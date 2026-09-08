@@ -2177,3 +2177,71 @@ package the capture is outside the transaction and its failure is logged: the
 design is already applied and the PDF already stored, and losing a history entry
 is not a reason to undo them. The document's `projectVersionId` is simply absent
 in that case rather than pointing at nothing.
+
+### T16 — Validation and Safety Layer (Phase 16)
+
+**Severity is a promise about what happens next.** `blocker` means an action is
+refused; `warning` means it proceeds and the user is told first; `note` means
+worth knowing. Getting this wrong in either direction is a product failure —
+refusing legitimate work, or letting a wrong number reach a client — so the
+boundary is written down rather than decided per check.
+
+**A plausibility check is never a blocker.** An 80 m sign is unusual, not
+impossible. Dimension checks warn about what looks like a slipped decimal and
+say so in those words; they never stop the job, because the alternative is the
+tool deciding what a user is allowed to build.
+
+**Staleness IS a blocker.** A superseded purchase count is not merely uncertain
+— it is a figure the system knows no longer follows from the project. Putting
+one on a quote is the exact failure this layer exists to prevent, so a quote is
+now refused while any material line or the cost is out of date.
+
+**The two gates are deliberately different.** A quote is refused for anything
+that makes the price wrong, absent data included: a line never calculated means
+the total is missing it. A package is refused only for data that is present and
+WRONG — superseded figures, and pieces the optimiser could not place that a plan
+would imply are being cut. Absent data stays a gap printed on the document,
+because T14 promised a package can be built from a drawing alone and that
+promise is worth keeping.
+
+**The stricter gate exposed a false positive that had been harmless.** Staleness
+compared `Material.updatedAt` against `calculatedAt`, which marks a line stale
+for edits that cannot change a figure: renaming a material, changing its
+supplier, or archiving it. As a warning that was noise; as a blocker it stops
+real work. It now compares the five fields the calculation actually used —
+already snapshotted on the row since T4 — against the material now. Without a
+readable snapshot it falls back to the timestamp, which over-reports: a line
+wrongly called stale costs a recalculation, a stale line called current reaches
+a client.
+
+**One finding per fact.** A material with no stated quantity is reported as
+having no quantity, not additionally as never calculated. The same problem told
+twice makes a project read as worse than it is, and a list nobody trusts is a
+list nobody reads.
+
+**The audit trail is deliberately narrow.** Approvals, issues, generations,
+restores and removals. Not reads, not recalculations. A trail recording
+everything is one nobody scans, and a trail nobody scans provides no safety.
+
+**Writing an event never fails the action it records.** Every call site is
+something that already succeeded — a quote issued, a package stored. Undoing
+real work to protect a record of it is backwards, so failures are logged and the
+gap shows as a missing entry.
+
+**Audit events survive the project they describe.** `Project` is set null on
+delete rather than cascading, because "this project existed and was deleted" is
+the entry that matters most.
+
+**Content sniffing accepts what it does not recognise.** T2 bound the declared
+MIME type into the upload signature, which validates what the browser said, not
+what arrived. The bytes are now checked at confirm time and a file whose prefix
+contradicts its declared type is refused — that is the case that matters, since
+the vision model is handed image bytes directly. A prefix the module has never
+been taught is accepted: a DXF or a supplier's spreadsheet has no magic number
+here, and refusing every unknown file would break ordinary attachments to guard
+against nothing. A failure to read the bytes is likewise not a rejection —
+storage being briefly unreachable is not evidence that a file is lying.
+
+**Only the first sixteen bytes are fetched.** A ranged read, because pulling a
+20 MB upload through the app server to check a magic number would be a real cost
+on every confirmed file.

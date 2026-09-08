@@ -609,6 +609,33 @@ export const strings = {
     generatedOn: 'Generated',
     none_: '—',
   },
+  integrity: {
+    title: 'Project checks',
+    subtitle:
+      'Everything the system can check about whether this project holds together. Nothing here is a judgement about the design.',
+    allClear: 'No problems found.',
+    blockers: 'Stops a document',
+    warnings: 'Worth checking',
+    notes: 'Worth knowing',
+    readyQuote: 'Ready to quote',
+    readyProduction: 'Ready for a package',
+    notReadyQuote: 'Not ready to quote',
+    notReadyProduction: 'Not ready for a package',
+    readyNote: 'A quote is refused while its price would come from superseded figures. A package is refused while it would carry figures that are wrong — not merely absent.',
+    areaSpecification: 'Specification',
+    areaDesign: 'Design',
+    areaMaterials: 'Materials',
+    areaCutting: 'Cutting',
+    areaCost: 'Cost',
+    areaDocuments: 'Documents',
+  },
+  audit: {
+    title: 'Activity',
+    subtitle: 'What has been approved, issued, generated or removed on this project.',
+    none: 'Nothing recorded yet.',
+    show: 'Show activity',
+    hide: 'Hide',
+  },
   versions: {
     title: 'Version history',
     subtitle:

@@ -100,7 +100,9 @@ A user can describe a signage project naturally in Moroccan Darija, receive clar
 ### Deferred out of T2 (deliberately)
 
 - [ ] PDF content extraction — stored and downloadable, but not readable by the vision model
-- [ ] Server-side image content sniffing — type is validated by declared MIME and bound into the upload signature; byte-level sniffing belongs with the validation layer in T16
+- [x] Server-side image content sniffing — done in T16: the first 16 bytes are
+      read at confirmation and a file whose prefix contradicts its declared type
+      is refused
 - [ ] Orphaned-object sweep for abandoned pending uploads
 
 ### Definition of done
@@ -534,19 +536,35 @@ Users can understand how a project changed and identify which project state gene
 
 # Phase 16 — Production Reliability
 
-## T16 — Validation and Safety Layer
+## T16 — Validation and Safety Layer ✅ COMPLETE
 
-- [ ] Calculation validation
-- [ ] Dimension validation
-- [ ] Material availability validation
-- [ ] Unsupported-scenario detection
-- [ ] Stale output detection
-- [ ] User warnings
-- [ ] Approval safeguards
-- [ ] Audit logging
-- [ ] Robust error recovery
+- [x] Calculation validation (missing, unsupported and stale lines, with the engine's own caveats carried through)
+- [x] Dimension validation (slipped decimals, wrong unit, extreme ratio, depth — all warnings, never blockers)
+- [x] Material availability validation (archived, missing stock size, zero price, no stated quantity)
+- [x] Unsupported-scenario detection (surfaced from every engine into one report)
+- [x] Stale output detection — now compares the fields a calculation actually used, not `updatedAt`
+- [x] User warnings (`IntegrityPanel`, grouped by what each severity means)
+- [x] Approval safeguards (quote refused on superseded figures; package refused on wrong ones)
+- [x] Audit logging (append-only, narrow by design, survives project deletion)
+- [x] Robust error recovery (audit and version writes never fail the action they record; an unreadable upload is accepted, not deleted)
+- [x] Byte-level content sniffing at upload confirmation (deferred from T2)
+- [x] Tests (39 unit, 20 integration)
 
-The system must fail safely rather than fabricate technical output.
+### Deferred out of T16 (deliberately)
+
+- [ ] A user-visible audit trail across all projects — the per-project trail is
+      on the project page; an account-wide view is a different screen
+- [ ] Retention or export of audit events — nothing prunes the table yet
+- [ ] Sniffing beyond the first bytes (a full container parse) — the magic
+      number catches the case that matters without decoding untrusted files
+- [ ] Signature checks for DXF, SVG and spreadsheets — they have no reliable
+      magic number, and refusing every unrecognised file would break ordinary
+      attachments to guard against nothing
+- [ ] Re-validating already-issued documents when a project later changes —
+      issued documents are frozen by design and keep their own snapshots
+- [ ] Rate limiting and abuse controls — a hosting concern, not a project one
+
+The system must fail safely rather than fabricate technical output. ✅
 
 ---
 
@@ -722,14 +740,35 @@ Completed:
 - [x] **T13 — Client Quote System** (Phase 13)
 - [x] **T14 — Production PDF** (Phase 14)
 - [x] **T15 — Full Version History** (Phase 15)
+- [x] **T16 — Validation and Safety Layer** (Phase 16)
 
 Active milestone:
 
-- [ ] None. T16 has not been started.
+- [ ] None. T17 has not been started.
 
 Next milestone:
 
-- [ ] **T16 — Validation and Safety Layer** (Phase 16)
+- [ ] **T17 — Industry Abstraction** (Phase 17)
+
+### T16 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 414 passed |
+| Integration tests | 230 passed against Neon |
+| Production build | passed, 61 routes |
+| Migrations | 19 applied |
+| Quote gate | tested: a quote whose spec moved after drafting is refused and stays a draft |
+| Package gate | tested: unplaced pieces refuse a package; absent data still allows one |
+| Audit | tested: survives deletion of the project it describes |
+| Schema correction | the first T16 migration left the audit FK as RESTRICT, which made deleting a user impossible; a second migration cascades it |
+
+**The stricter gate found a real false positive.** Staleness compared
+`Material.updatedAt`, so archiving or renaming a material marked every line
+using it out of date. Harmless as a warning; as a blocker it refused a quote
+that was perfectly sound. It now compares the fields the calculation used.
 
 ### T15 verification record
 

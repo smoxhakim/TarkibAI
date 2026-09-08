@@ -27,6 +27,7 @@ model User {
 
   projects      Project[]
   materials     Material[]
+  auditEvents   AuditEvent[]
   costSettings  CostSettings?
   quoteSettings QuoteSettings?
   quotes        Quote[]
@@ -128,6 +129,7 @@ model Project {
   costs            ProjectCost[]
   documents        Document[]
   quotes           Quote[]
+  auditEvents      AuditEvent[]
   projectExpenses  ProjectExpense[]
   canvasScene      CanvasScene?
   designProposals  DesignProposal[]
@@ -801,4 +803,44 @@ model QuoteLine {
   lineTotalCents Int
 
   @@unique([quoteId, position])
+}
+
+/// An append-only record of consequential actions.
+///
+/// Written for the things that change what a project means or what someone can
+/// act on: a specification approved, a design accepted, a quote issued, a
+/// package generated, a version restored, a project or material removed.
+/// Routine reads and recalculations are deliberately absent — an audit trail
+/// nobody can scan is not an audit trail.
+///
+/// Writing an event must never fail the action it records. Every call site logs
+/// and continues, because losing a history entry is not a reason to undo an
+/// issued quote.
+model AuditEvent {
+  id String @id @default(uuid())
+
+  /// The user who performed it. Cascades on user delete: an event has no
+  /// meaning detached from the person who did it, and the userId is required.
+  /// The PROJECT link is nullable and set null instead, so deleting a project
+  /// leaves behind the record that it existed and was deleted.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  /// Dotted action name, e.g. "spec.approved" or "quote.issued".
+  action String
+
+  /// A short human sentence, written at the call site where the context is.
+  summary String
+
+  /// Structured detail — ids,version numbers, amounts. Never a client's private
+  /// data beyond what the project already holds.
+  detail Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([userId, createdAt])
 }

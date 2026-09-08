@@ -5,6 +5,7 @@ import type { ProjectSpec } from '@/generated/prisma/client';
 import { missingFields, type SpecFieldKey } from './completeness';
 import { mergeSpec } from './merge';
 import { recordVersion } from '@/lib/versions/service';
+import { recordAudit } from '@/lib/audit/service';
 import { emptySpec, parseSpecData, type ProjectSpecData, type ProjectSpecPatch } from './schema';
 
 export type SpecView = {
@@ -133,6 +134,14 @@ export async function approveSpec(projectId: string, userId: string): Promise<Sp
     );
 
     return row;
+  });
+
+  await recordAudit({
+    userId,
+    projectId,
+    action: 'spec.approved',
+    summary: `Approved specification v${approved.version}.`,
+    detail: { specVersion: approved.version },
   });
 
   return toView(approved);

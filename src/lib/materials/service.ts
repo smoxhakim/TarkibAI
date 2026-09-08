@@ -3,6 +3,7 @@ import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import type { Material } from '@/generated/prisma/client';
 import type { CreateMaterialInput, MaterialQuery, UpdateMaterialInput } from './schema';
+import { recordAudit } from '@/lib/audit/service';
 
 /**
  * A user's material library is private business data: their suppliers and their
@@ -116,10 +117,23 @@ export async function setMaterialArchived(
   archived: boolean
 ): Promise<Material> {
   await assertMaterialAccess(materialId, userId);
-  return prisma.material.update({
+  const updated = await prisma.material.update({
     where: { id: materialId },
     data: { archivedAt: archived ? new Date() : null },
   });
+
+  if (archived) {
+    // Only the archive is recorded. Restoring is a correction, and a trail that
+    // logs both halves of every toggle is one nobody reads.
+    await recordAudit({
+      userId,
+      action: 'material.archived',
+      summary: `Archived the material "${updated.name}". Projects still using it will say so.`,
+      detail: { materialId },
+    });
+  }
+
+  return updated;
 }
 
 /**
@@ -131,7 +145,7 @@ export async function setMaterialArchived(
  * every past reference intact.
  */
 export async function deleteMaterial(materialId: string, userId: string): Promise<void> {
-  await assertMaterialAccess(materialId, userId);
+  const material = await assertMaterialAccess(materialId, userId);
 
   const usageCount = await prisma.projectMaterial.count({ where: { materialId } });
   if (usageCount > 0) {
@@ -143,6 +157,13 @@ export async function deleteMaterial(materialId: string, userId: string): Promis
   }
 
   await prisma.material.delete({ where: { id: materialId } });
+
+  await recordAudit({
+    userId,
+    action: 'material.deleted',
+    summary: `Deleted the material "${material.name}".`,
+    detail: { materialId },
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -190,16 +211,73 @@ export type ProjectMaterialView = {
   staleReasons: StaleReason[];
 };
 
+/** The material fields a calculation actually depends on. */
+type CalculationInputFields = {
+  measurementModel: string;
+  standardLengthMm: number | null;
+  sheetWidthMm: number | null;
+  sheetHeightMm: number | null;
+  unitPriceCents: number;
+};
+
 /** Reads the snapshotted explanation defensively — it is untyped JSON. */
 function readCalculationInputs(value: unknown): {
   steps: CalculationStep[];
   warnings: CalculationWarning[];
+  /** Null when the snapshot predates these fields or cannot be read. */
+  fields: CalculationInputFields | null;
 } {
-  if (typeof value !== 'object' || value === null) return { steps: [], warnings: [] };
+  if (typeof value !== 'object' || value === null) return { steps: [], warnings: [], fields: null };
   const record = value as Record<string, unknown>;
   const steps = Array.isArray(record.steps) ? (record.steps as CalculationStep[]) : [];
   const warnings = Array.isArray(record.warnings) ? (record.warnings as CalculationWarning[]) : [];
-  return { steps, warnings };
+
+  const number = (key: string): number | null =>
+    typeof record[key] === 'number' ? (record[key] as number) : null;
+
+  const fields =
+    typeof record.measurementModel === 'string' && typeof record.unitPriceCents === 'number'
+      ? {
+          measurementModel: record.measurementModel,
+          standardLengthMm: number('standardLengthMm'),
+          sheetWidthMm: number('sheetWidthMm'),
+          sheetHeightMm: number('sheetHeightMm'),
+          unitPriceCents: record.unitPriceCents,
+        }
+      : null;
+
+  return { steps, warnings, fields };
+}
+
+/**
+ * Whether the material has changed in a way that changes the numbers.
+ *
+ * Compares the snapshot taken at calculation time against the material now,
+ * field by field. The earlier test — `material.updatedAt > calculatedAt` — was
+ * a proxy, and it marked a line stale for edits that cannot affect a figure:
+ * renaming a material, changing its supplier or category, or archiving it. T16
+ * turned staleness into a blocker that refuses to issue a quote, at which point
+ * a false positive stops real work.
+ *
+ * Without a readable snapshot it falls back to the timestamp, which over-reports
+ * rather than under-reports. A line wrongly called stale costs a recalculation;
+ * a stale line called current reaches a client.
+ */
+function materialInputsChanged(
+  snapshot: CalculationInputFields | null,
+  material: Material,
+  calculatedAt: Date,
+  updatedAt: Date
+): boolean {
+  if (snapshot === null) return updatedAt > calculatedAt;
+
+  return (
+    snapshot.measurementModel !== material.measurementModel ||
+    snapshot.standardLengthMm !== material.standardLengthMm ||
+    snapshot.sheetWidthMm !== material.sheetWidthMm ||
+    snapshot.sheetHeightMm !== material.sheetHeightMm ||
+    snapshot.unitPriceCents !== material.unitPriceCents
+  );
 }
 
 export async function listProjectMaterials(
@@ -221,7 +299,7 @@ export async function listProjectMaterials(
   ]);
 
   return rows.map((row) => {
-    const { steps, warnings } = readCalculationInputs(row.calculationInputs);
+    const { steps, warnings, fields } = readCalculationInputs(row.calculationInputs);
 
     const staleReasons: StaleReason[] = [];
     if (row.calculatedAt) {
@@ -229,8 +307,9 @@ export async function listProjectMaterials(
       if (approvedSpec && row.specVersionAtCalculation !== null && approvedSpec.version > row.specVersionAtCalculation) {
         staleReasons.push('spec_changed');
       }
-      // An edited material may have a different price or stock size.
-      if (row.material.updatedAt > row.calculatedAt) {
+      // Only an edit that changes a figure counts. Archiving, renaming or
+      // changing a supplier bumps updatedAt without touching the arithmetic.
+      if (materialInputsChanged(fields, row.material, row.calculatedAt, row.material.updatedAt)) {
         staleReasons.push('material_changed');
       }
       // The requirement was edited after the numbers were produced. This uses
