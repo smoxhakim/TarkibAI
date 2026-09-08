@@ -442,6 +442,48 @@ npm run dev
 
 Open http://localhost:3000
 
+## Deploying
+
+Verified against a production build and a from-empty migration run before the
+first deploy. What is written here is what was actually checked, not a guess.
+
+### The migration chain applies from scratch
+
+All 24 migrations were applied to an empty schema and the result matched
+`schema.prisma` with **zero drift**, so a fresh Neon database comes up correctly.
+Vercel runs `postinstall: prisma generate`; run `npm run prisma:deploy` against
+the production database once before the first release.
+
+### Environment
+
+| Variable | Required | Note |
+| --- | --- | --- |
+| `DATABASE_URL` / `DIRECT_URL` | yes | pooled and direct Neon endpoints |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` | yes | a **production** Clerk instance issues new keys; the development ones do not carry over |
+| `OPENAI_API_KEY` | yes | without it the chat endpoint returns 503 and says so |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | yes | files, quote PDFs, production packages, mockups |
+| `INNGEST_SIGNING_KEY` | **yes** | verified: without it `/api/inngest` returns 500 in production mode. With it, an unsigned request is correctly refused with 401. |
+| `INNGEST_EVENT_KEY` | yes | outbound events; without it a mockup can never start |
+| `REPLICATE_API_TOKEN` | optional | mockups say they are not configured without it |
+
+### Two things that bite otherwise
+
+**R2 CORS** currently allows `http://localhost:3000` only. Uploads go from the
+browser straight to R2, so the production origin must be added or every upload
+fails with an opaque CORS error.
+
+**Function duration.** Every route is at or below 60 seconds, which is the
+Vercel Hobby ceiling. The chat route wants longer than that — a tool-calling
+turn against a reasoning model can run past a minute — so on Hobby a long Darija
+turn with several tool calls can time out. Raise it to 300 on Pro if that starts
+happening in practice.
+
+### After the first deploy
+
+Sync the Inngest app: app.inngest.com → Manage → Apps → Sync new app, pointing
+at `https://<your-domain>/api/inngest`. Inngest does not know the functions
+exist until it fetches that endpoint.
+
 ## Scripts
 
 | Script | Purpose |
