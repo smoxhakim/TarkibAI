@@ -2490,3 +2490,25 @@ than vanishing from the list.
 
 **Lead time is stated, not inferred.** The product has no delivery history, so
 it asks rather than computing a number that would look derived.
+
+### The middleware file convention (found while deploying)
+
+**`src/middleware.ts`, not `src/proxy.ts`, and the deprecation warning is
+accepted deliberately.** Next 16 deprecates "middleware" in favour of "proxy"
+and says so on every build. It compiles `proxy.ts` — the build output even
+prints `ƒ Proxy (Middleware)` — but does not add an entry to
+`.next/server/middleware-manifest.json`, and that manifest is what Vercel reads
+to decide whether to run it.
+
+The failure is silent and total. `next start` locally runs the proxy regardless,
+so every local check passes; on Vercel the middleware never executes, `auth()`
+throws for want of `clerkMiddleware`, and every request returns 500 — pages, API
+routes and the public share link alike, with a green build throughout.
+
+Verified by building both ways: `proxy.ts` produces `middleware: {}`,
+`middleware.ts` produces `middleware: { "/": ... }`.
+
+**The redirect is explicit rather than `auth.protect()`.** Under this convention
+`protect()` answered 404 instead of redirecting, so a signed-out visitor to
+/dashboard was told the page did not exist. `redirectToSignIn()` states the
+intended outcome instead of leaving the choice to the library.
