@@ -570,25 +570,59 @@ The system must fail safely rather than fabricate technical output. ✅
 
 # Phase 17 — Industry Abstraction
 
-## T17 — Domain Framework
+## T17 — Domain Framework ✅ COMPLETE
 
-- [ ] Separate core platform entities from industry-specific rules
-- [ ] Domain configuration system
-- [ ] Industry-specific material rules
-- [ ] Industry-specific calculation rules
-- [ ] Industry-specific component schemas
-- [ ] Industry-specific prompts
-- [ ] Industry-specific drawing templates
+- [x] Separate core platform entities from industry-specific rules (`src/lib/domains`)
+- [x] Domain configuration system (`DomainProfile`, registry, `Project.domain`)
+- [x] Industry-specific material rules — measurement models are platform; what a
+      trade *requires* before approval is the profile's decision
+- [x] Industry-specific component schemas (required spec fields, canvas palette)
+- [x] Industry-specific prompts (domain guidance appended to the system prompt)
+- [x] Industry-specific plausibility bounds and mockup phrasing
+- [x] Two real domains: signage & shopfronts, joinery & furniture
+- [x] Tests (21 unit invariants over every profile, 11 integration)
+
+### Deliberately NOT industry-specific
+
+- [x] **Calculation rules stay platform-level.** The T17 checklist listed
+      "industry-specific calculation rules"; measurement models, purchase
+      counts, cutting, waste, cost and tax are the same arithmetic in every
+      trade, and a profile able to reach them would be where a trade acquires
+      its own quietly different numbers. `DomainProfile` has no calculation
+      field, and an integration test runs a joinery project through the
+      unchanged engines to prove it needs none. If a trade ever genuinely needs
+      different arithmetic, that is a new measurement model in the engine, not a
+      hook in the profile.
+- [x] **Drawing templates stay platform-level.** Orthographic projection,
+      dimensions and callouts are geometry, not trade knowledge. What differs by
+      trade is the object vocabulary, which the profile already narrows.
+
+### Deferred out of T17 (deliberately)
+
+- [ ] Changing a project's trade after creation — it decides what "approved"
+      required, so switching it would retroactively change that
+- [ ] The remaining PRD domains (metal fabrication, MDF, pergolas, restaurant
+      branding, custom installations) — each needs its own trade vocabulary and
+      required-field decisions, and inventing them without a practitioner would
+      be guessing. The framework and its invariant tests are what make adding
+      one small.
+- [ ] Per-domain material categories and default libraries
+- [ ] Per-domain document templates — the quote and package templates are
+      trade-neutral today and nothing yet needs them not to be
+- [ ] Domain-specific Darija vocabulary lists beyond the prompt guidance
 
 Initial domain:
 
-- Signage / fabrication
+- Signage / fabrication ✅
+
+Second domain, shipped to prove the seam:
+
+- Joinery / furniture ✅
 
 Potential future domains:
 
 - Restaurant/store branding
 - Metal fabrication
-- Woodworking
 - MDF fabrication
 - Pergolas
 - Custom installations
@@ -741,14 +775,29 @@ Completed:
 - [x] **T14 — Production PDF** (Phase 14)
 - [x] **T15 — Full Version History** (Phase 15)
 - [x] **T16 — Validation and Safety Layer** (Phase 16)
+- [x] **T17 — Domain Framework** (Phase 17)
 
 Active milestone:
 
-- [ ] None. T17 has not been started.
+- [ ] None. T18 has not been started.
 
 Next milestone:
 
-- [ ] **T17 — Industry Abstraction** (Phase 17)
+- [ ] **T18 — Teams and Permissions** (Phase 18)
+
+### T17 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 435 passed |
+| Integration tests | 241 passed against Neon |
+| Production build | passed, 61 routes |
+| Migrations | 20 applied |
+| No behaviour change for signage | tested: the required field list and plausibility bounds are asserted to be the ones that shipped |
+| The seam is real | tested: one specification is blocked for signage and approves for joinery |
+| Engines are trade-independent | tested: a joinery project calculates, cuts and costs through the unchanged engines |
 
 ### T16 verification record
 

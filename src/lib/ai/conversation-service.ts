@@ -9,7 +9,8 @@ import { loadReadyFiles } from '@/lib/files/service';
 import { HISTORY_WINDOW, IMAGE_CONTEXT_MESSAGES, isAiConfigured } from './config';
 import { buildImageParts } from './vision';
 import { runAgent } from './agent';
-import { TARKIB_SYSTEM_PROMPT, buildSpecStateMessage } from './prompts/system';
+import { buildSpecStateMessage, buildSystemPrompt } from './prompts/system';
+import { getDomain } from '@/lib/domains/registry';
 import { buildToolbox } from './tools';
 
 export type ChatMessageView = {
@@ -69,7 +70,7 @@ export async function runConversationTurn(
   content: string,
   attachmentFileIds: string[] = []
 ): Promise<ConversationTurn> {
-  await assertProjectAccess(projectId, userId);
+  const project = await assertProjectAccess(projectId, userId);
   if (!isAiConfigured()) throw aiUnavailable();
 
   const history = await prisma.chatMessage.findMany({
@@ -115,7 +116,7 @@ export async function runConversationTurn(
   const newImageParts = await buildImageParts(newFiles);
 
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: TARKIB_SYSTEM_PROMPT },
+    { role: 'system', content: buildSystemPrompt(getDomain(project.domain)) },
     { role: 'system', content: buildSpecStateMessage(specBefore.spec, specBefore.missing) },
     ...historyMessages,
     newImageParts.length > 0

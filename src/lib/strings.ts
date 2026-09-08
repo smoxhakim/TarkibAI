@@ -31,6 +31,7 @@ export const strings = {
     create: 'New project',
     creating: 'Creating…',
     titleLabel: 'Project title',
+    domainLabel: 'Trade',
     titlePlaceholder: 'e.g. Restaurant facade — Casablanca',
     open: 'Open',
     rename: 'Rename',
@@ -608,6 +609,10 @@ export const strings = {
     download: 'Download',
     generatedOn: 'Generated',
     none_: '—',
+  },
+  domains: {
+    label: 'Trade',
+    note: 'The trade decides which questions this project must answer before it can be approved, and what the assistant asks about.',
   },
   integrity: {
     title: 'Project checks',

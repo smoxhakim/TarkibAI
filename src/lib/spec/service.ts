@@ -3,6 +3,7 @@ import { ApiError, badRequest } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import type { ProjectSpec } from '@/generated/prisma/client';
 import { missingFields, type SpecFieldKey } from './completeness';
+import { getDomain } from '@/lib/domains/registry';
 import { mergeSpec } from './merge';
 import { recordVersion } from '@/lib/versions/service';
 import { recordAudit } from '@/lib/audit/service';
@@ -17,9 +18,9 @@ export type SpecView = {
   complete: boolean;
 };
 
-function toView(row: ProjectSpec | null): SpecView {
+function toView(row: ProjectSpec | null, required: readonly SpecFieldKey[]): SpecView {
   const spec = row ? parseSpecData(row.data) : emptySpec();
-  const missing = missingFields(spec);
+  const missing = missingFields(spec, required);
   return {
     spec,
     version: row?.version ?? 0,
@@ -39,8 +40,9 @@ async function latestSpecRow(projectId: string) {
 }
 
 export async function getSpec(projectId: string, userId: string): Promise<SpecView> {
-  await assertProjectAccess(projectId, userId);
-  return toView(await latestSpecRow(projectId));
+  const project = await assertProjectAccess(projectId, userId);
+  const domain = getDomain(project.domain);
+  return toView(await latestSpecRow(projectId), domain.requiredSpecFields);
 }
 
 /**
@@ -56,7 +58,8 @@ export async function updateDraftSpec(
   userId: string,
   patch: ProjectSpecPatch
 ): Promise<SpecView> {
-  await assertProjectAccess(projectId, userId);
+  const project = await assertProjectAccess(projectId, userId);
+  const required = getDomain(project.domain).requiredSpecFields;
 
   const latest = await latestSpecRow(projectId);
   const current = latest ? parseSpecData(latest.data) : emptySpec();
@@ -67,7 +70,7 @@ export async function updateDraftSpec(
       where: { id: latest.id },
       data: { data: merged },
     });
-    return toView(updated);
+    return toView(updated, required);
   }
 
   const created = await prisma.projectSpec.create({
@@ -78,7 +81,7 @@ export async function updateDraftSpec(
       status: 'draft',
     },
   });
-  return toView(created);
+  return toView(created, required);
 }
 
 /**
@@ -93,7 +96,8 @@ export async function updateDraftSpec(
  * exact project state that produced them (PRD §21).
  */
 export async function approveSpec(projectId: string, userId: string): Promise<SpecView> {
-  await assertProjectAccess(projectId, userId);
+  const project = await assertProjectAccess(projectId, userId);
+  const required = getDomain(project.domain).requiredSpecFields;
 
   const latest = await latestSpecRow(projectId);
   if (!latest) {
@@ -104,7 +108,7 @@ export async function approveSpec(projectId: string, userId: string): Promise<Sp
   }
 
   const spec = parseSpecData(latest.data);
-  const missing = missingFields(spec);
+  const missing = missingFields(spec, required);
   if (missing.length > 0) {
     throw badRequest(
       `The specification is missing required information: ${missing.join(', ')}. ` +
@@ -144,5 +148,5 @@ export async function approveSpec(projectId: string, userId: string): Promise<Sp
     detail: { specVersion: approved.version },
   });
 
-  return toView(approved);
+  return toView(approved, required);
 }

@@ -1,4 +1,5 @@
 import type { LengthUnit, ProjectSpecData } from '@/lib/spec/schema';
+import type { DomainProfile } from '@/lib/domains/types';
 
 /**
  * Deterministic integrity checks over project data.
@@ -52,18 +53,21 @@ const MM_PER: Record<LengthUnit, number> = { mm: 1, cm: 10, m: 1000 };
 /* -------------------------------------------------------------------------- */
 
 /**
- * Bounds beyond which a dimension is more likely a typing slip than a project.
+ * Plausibility bounds come from the project's trade (T17).
  *
- * Chosen wide on purpose. The largest signage this is plausibly used for is a
- * facade band of a few tens of metres; 100 m is past that but not absurd, so it
- * warns rather than refuses. The lower bound catches a value entered in metres
- * that was meant to be millimetres.
+ * The same number means different things in different work: a twelve-metre run
+ * is ordinary signage and a very large piece of joinery. Bounds are chosen wide
+ * in every domain — they exist to catch a slipped decimal, not to police what
+ * someone builds — and they only ever produce warnings.
  */
-const IMPLAUSIBLY_LARGE_MM = 100_000;
-const IMPLAUSIBLY_SMALL_MM = 10;
-const EXTREME_ASPECT_RATIO = 50;
+export function checkDimensions(spec: ProjectSpecData, domain: DomainProfile): Finding[] {
+  const {
+    implausiblyLargeMm: IMPLAUSIBLY_LARGE_MM,
+    implausiblySmallMm: IMPLAUSIBLY_SMALL_MM,
+    extremeAspectRatio: EXTREME_ASPECT_RATIO,
+    longThinExample,
+  } = domain.dimensionBounds;
 
-export function checkDimensions(spec: ProjectSpecData): Finding[] {
   const dimensions = spec.dimensions;
   if (!dimensions) return [];
 
@@ -103,7 +107,7 @@ export function checkDimensions(spec: ProjectSpecData): Finding[] {
         code: 'dimensions.implausibly_large',
         severity: 'warning',
         area: 'specification',
-        message: `${label} is ${value} ${unit}, which is unusually large for this kind of work.`,
+        message: `${label} is ${value} ${unit}, which is unusually large for ${domain.label.toLowerCase()}.`,
         action: 'Check for a slipped decimal point or the wrong unit. If it is correct, ignore this.',
         subject: label,
       });
@@ -128,7 +132,7 @@ export function checkDimensions(spec: ProjectSpecData): Finding[] {
         code: 'dimensions.extreme_ratio',
         severity: 'note',
         area: 'specification',
-        message: `The sign is about ${Math.round(ratio)}:1. Long thin work is normal for fascia bands, but check it is intended.`,
+        message: `The ${domain.noun.singular} is about ${Math.round(ratio)}:1. Long thin work is normal for ${longThinExample}, but check it is intended.`,
         action: null,
         subject: null,
       });

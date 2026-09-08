@@ -24,6 +24,7 @@ import { getScene } from '@/lib/canvas/service';
 import { DesignProposalsPanel } from '@/components/DesignProposalsPanel';
 import { listProposals } from '@/lib/design/service';
 import { CuttingPlanPanel } from '@/components/CuttingPlanPanel';
+import { getDomain } from '@/lib/domains/registry';
 import {
   listLinearCuts,
   listLinearPlans,
@@ -139,6 +140,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       (material): material is NonNullable<typeof material> =>
         material !== undefined && material.measurementModel === 'sheet'
     );
+  const domain = getDomain(project.domain);
   const currency = costSettings?.currency ?? 'MAD';
   const aiConfigured = isAiConfigured();
   const storageConfigured = isStorageConfigured();
@@ -159,7 +161,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             {strings.projects.createdOn} {dateFormat.format(project.createdAt)}
           </p>
         </div>
-        <StatusBadge project={project} />
+        <span className="flex items-center gap-2">
+          <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-muted">
+            {domain.label}
+          </span>
+          <StatusBadge project={project} />
+        </span>
       </div>
 
       <div className="mt-4 border-y border-line py-3">
@@ -214,6 +221,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             seedBlockedReason: sceneView.seedBlockedReason,
           }}
           materials={library.map((m) => ({ id: m.id, name: m.name }))}
+          objectTypes={domain.canvasObjectTypes}
         />
         <ProjectMaterialsPanel
           projectId={project.id}

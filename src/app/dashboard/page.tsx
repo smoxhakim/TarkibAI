@@ -5,6 +5,7 @@ import { strings } from '@/lib/strings';
 import { StatusBadge } from '@/components/StatusBadge';
 import { NewProjectForm } from '@/components/NewProjectForm';
 import { ProjectActions } from '@/components/ProjectActions';
+import { DOMAINS } from '@/lib/domains/registry';
 
 // Reads the signed-in user's own data, so it must never be statically cached.
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,13 @@ export default async function DashboardPage({
 
       {showArchived ? null : (
         <div className="mt-6">
-          <NewProjectForm />
+          <NewProjectForm
+            domains={DOMAINS.map((domain) => ({
+              id: domain.id,
+              label: domain.label,
+              description: domain.description,
+            }))}
+          />
         </div>
       )}
 

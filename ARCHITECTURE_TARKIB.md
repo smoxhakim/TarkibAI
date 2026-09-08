@@ -2245,3 +2245,58 @@ storage being briefly unreachable is not evidence that a file is lying.
 **Only the first sixteen bytes are fetched.** A ranged read, because pulling a
 20 MB upload through the app server to check a magic number would be a real cost
 on every confirmed file.
+
+### T17 — Domain Framework (Phase 17)
+
+**A profile decides what is asked, never what is calculated.** Required
+specification fields, agent vocabulary, canvas palette, dimension plausibility
+and mockup phrasing differ by trade. Material requirements, purchase counts,
+cutting, waste, cost and tax do not — a 6 m bar divides the same way whether it
+becomes a sign frame or a pergola rafter. Keeping calculation out of
+`DomainProfile` is deliberate: a profile that could reach it would be the place
+a trade quietly acquires its own arithmetic, which is exactly what PRD 24 asks
+to avoid by isolating industry rules FROM reusable components rather than
+threading them through.
+
+**Anything a profile cannot express means the seam is wrong.** The type is
+narrow on purpose, and widening it until it can express everything would turn it
+back into the thing it replaced.
+
+**A second real domain, not an abstraction with one implementation.** Joinery is
+in because every engine below the specification already supports it unchanged —
+a wardrobe carcass nests like a sign face, a pergola rafter cuts like a sign
+frame — and because a framework with a single profile is untested machinery. It
+proves the seam by differing where the trades actually differ: no lighting
+requirement, a smaller plausible size, no lettering in its canvas vocabulary.
+
+**Signage keeps exactly the behaviour it shipped with.** Every value in the
+signage profile was hard-coded somewhere before T17, and a test asserts the
+required field list and the plausibility bounds are the ones that shipped. The
+`domain` column defaults to signage, so no existing project changes.
+
+**Narrowing applies to what is offered, not to what is stored.** The scene
+schema keeps the full object vocabulary; a domain declares a subset. Adding a
+lettering object to a joinery project is refused, but a scene that already
+contains one stays readable and editable — otherwise changing a project's trade
+would make its own design impossible to open.
+
+**`getDomain` falls back rather than throwing.** A project row carrying an id
+this build does not know — a domain removed, or a database ahead of the code —
+should still open. Signage is the fallback because it is the default and the
+stricter set, and the fallback is logged so it does not pass unnoticed.
+
+**Completeness gained a reader table.** `missingFields` was nine hand-written
+`if` statements; it is now a lookup from field key to where that field lives.
+That is what makes the required set a parameter rather than a constant, and it
+means a domain cannot require a field nothing knows how to read — a registry
+test asserts every domain's required set comes back missing from an empty
+specification.
+
+**The domain paragraph is appended to the system prompt, not interpolated
+through it.** The trade-specific vocabulary stays one readable block a person
+can check against the profile, instead of conditionals scattered through
+instructions that are identical everywhere.
+
+**The trade is chosen at creation and not changed afterwards.** It decides which
+questions a project must answer before approval, and switching it under an
+approved specification would retroactively change what "approved" meant.

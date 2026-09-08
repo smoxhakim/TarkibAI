@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SPEC_VERSION, type ProjectSpecData } from '@/lib/spec/schema';
+import { JOINERY, SIGNAGE } from '@/lib/domains/registry';
 import {
   checkCalculations,
   checkCost,
@@ -33,11 +34,11 @@ const codes = (findings: { code: string }[]) => findings.map((finding) => findin
 
 describe('checkDimensions', () => {
   it('accepts an ordinary sign without comment', () => {
-    expect(checkDimensions(spec({ dimensions: { width: 8, height: 3, unit: 'm' } }))).toEqual([]);
+    expect(checkDimensions(spec({ dimensions: { width: 8, height: 3, unit: 'm' } }), SIGNAGE)).toEqual([]);
   });
 
   it('warns about a value that looks like a slipped decimal', () => {
-    const findings = checkDimensions(spec({ dimensions: { width: 800, height: 3, unit: 'm' } }));
+    const findings = checkDimensions(spec({ dimensions: { width: 800, height: 3, unit: 'm' } }), SIGNAGE);
 
     expect(codes(findings)).toContain('dimensions.implausibly_large');
     // A warning, never a blocker: the tool does not decide what someone may build.
@@ -45,32 +46,32 @@ describe('checkDimensions', () => {
   });
 
   it('warns about a value entered in the wrong unit', () => {
-    expect(codes(checkDimensions(spec({ dimensions: { width: 0.008, height: 3, unit: 'm' } })))).toContain(
+    expect(codes(checkDimensions(spec({ dimensions: { width: 0.008, height: 3, unit: 'm' } }), SIGNAGE))).toContain(
       'dimensions.implausibly_small'
     );
   });
 
   it('reads the same measurement differently depending on its unit', () => {
     // 8000 mm is an ordinary 8 m sign; 8000 m is not.
-    expect(checkDimensions(spec({ dimensions: { width: 8000, height: 3000, unit: 'mm' } }))).toEqual([]);
-    expect(codes(checkDimensions(spec({ dimensions: { width: 8000, height: 3000, unit: 'm' } })))).toContain(
+    expect(checkDimensions(spec({ dimensions: { width: 8000, height: 3000, unit: 'mm' } }), SIGNAGE)).toEqual([]);
+    expect(codes(checkDimensions(spec({ dimensions: { width: 8000, height: 3000, unit: 'm' } }), SIGNAGE))).toContain(
       'dimensions.implausibly_large'
     );
   });
 
   it('says the numbers are ambiguous when no unit was recorded', () => {
-    expect(codes(checkDimensions(spec({ dimensions: { width: 8, height: 3 } })))).toEqual([
+    expect(codes(checkDimensions(spec({ dimensions: { width: 8, height: 3 } }), SIGNAGE))).toEqual([
       'dimensions.no_unit',
     ]);
   });
 
   it('says nothing when there are no dimensions to check', () => {
-    expect(checkDimensions(spec())).toEqual([]);
-    expect(checkDimensions(spec({ dimensions: { unit: 'm' } }))).toEqual([]);
+    expect(checkDimensions(spec(), SIGNAGE)).toEqual([]);
+    expect(checkDimensions(spec({ dimensions: { unit: 'm' } }), SIGNAGE)).toEqual([]);
   });
 
   it('notes an extreme aspect ratio without objecting to it', () => {
-    const findings = checkDimensions(spec({ dimensions: { width: 30, height: 0.4, unit: 'm' } }));
+    const findings = checkDimensions(spec({ dimensions: { width: 30, height: 0.4, unit: 'm' } }), SIGNAGE);
 
     const ratio = findings.find((finding) => finding.code === 'dimensions.extreme_ratio');
     expect(ratio?.severity).toBe('note');
@@ -80,7 +81,7 @@ describe('checkDimensions', () => {
 
   it('notes a depth greater than the shorter face dimension', () => {
     expect(
-      codes(checkDimensions(spec({ dimensions: { width: 2, height: 0.3, depth: 0.5, unit: 'm' } })))
+      codes(checkDimensions(spec({ dimensions: { width: 2, height: 0.3, depth: 0.5, unit: 'm' } }), SIGNAGE))
     ).toContain('dimensions.depth_exceeds_face');
   });
 });

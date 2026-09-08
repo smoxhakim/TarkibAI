@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DOMAIN_IDS } from '@/lib/domains/registry';
 
 export const projectTitleSchema = z
   .string()
@@ -8,6 +9,12 @@ export const projectTitleSchema = z
 
 export const createProjectSchema = z.object({
   title: projectTitleSchema,
+  /**
+   * The trade this project belongs to. Omitted means signage, which is what
+   * every project created before T17 is — a caller that does not know about
+   * domains keeps working and keeps getting the same behaviour.
+   */
+  domain: z.enum(DOMAIN_IDS as [string, ...string[]]).optional(),
 });
 
 export const updateProjectSchema = z

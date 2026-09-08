@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { assertProjectAccess } from '@/lib/projects/service';
+import { getDomain } from '@/lib/domains/registry';
 import { getSpec } from '@/lib/spec/service';
 import { listProjectMaterials } from '@/lib/materials/service';
 import { getProjectCost } from '@/lib/calc/costs/service';
@@ -74,7 +75,8 @@ export async function getIntegrityReport(
   projectId: string,
   userId: string
 ): Promise<IntegrityReport> {
-  await assertProjectAccess(projectId, userId);
+  const project = await assertProjectAccess(projectId, userId);
+  const domain = getDomain(project.domain);
 
   const [spec, materialRows, costView, sceneView, sheetPlans, linearPlans] = await Promise.all([
     getSpec(projectId, userId),
@@ -93,7 +95,7 @@ export async function getIntegrityReport(
   const byId = new Map(library.map((material) => [material.id, material]));
 
   const findings: Finding[] = [
-    ...checkDimensions(spec.spec),
+    ...checkDimensions(spec.spec, domain),
 
     ...checkMaterials(
       materialRows.map((row) => {

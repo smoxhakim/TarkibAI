@@ -107,6 +107,17 @@ model Project {
   user   User   @relation(fields: [userId], references: [id])
   title  String
 
+  /// The fabrication trade this project belongs to (src/lib/domains).
+  ///
+  /// Decides which specification fields must be answered before approval, what
+  /// vocabulary the agent uses, which canvas objects are offered, and what
+  /// counts as an implausible dimension. It does NOT reach the calculation
+  /// engines: material requirements, cutting, waste and cost are the same
+  /// arithmetic in every trade.
+  ///
+  /// Defaults to signage, which is what every project created before T17 is.
+  domain String @default("signage")
+
   // Workflow stage. "archived" is deliberately NOT a value here: archiving is
   // orthogonal to progress, so it is tracked by archivedAt. That way restoring a
   // project returns it to the stage it had reached rather than losing it.

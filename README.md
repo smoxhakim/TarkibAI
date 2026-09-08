@@ -307,6 +307,7 @@ src/
                           # settings and issuing
     production/           # workshop package: spec readers, assembly, template
     versions/             # project snapshots, deterministic diff, restore
+    domains/              # trade profiles: required fields, palette, bounds, prompt
     validation/           # integrity checks, document gates, content sniffing
     audit/                # append-only record of consequential actions
     pdf/                  # shared document layer: image inlining, formatting,
@@ -640,7 +641,24 @@ Also: an append-only audit trail of approvals, issues, generations, restores and
 removals, which survives the project it describes being deleted; and byte-level
 content sniffing at upload confirmation, deferred from T2.
 
-**Next: T17 — Industry Abstraction (Phase 17)**
+T17 adds: the domain framework. A project belongs to a trade, and the trade
+decides which specification fields must be answered before approval, what
+vocabulary the assistant uses, which canvas objects are offered, and what counts
+as an implausible dimension.
+
+It does not decide anything about calculation. Material requirements, purchase
+counts, cutting, waste, cost and tax are the same arithmetic in every trade, and
+keeping them out of the profile is what stops a trade acquiring its own quietly
+different numbers.
+
+Two domains ship: **signage & shopfronts**, which behaves exactly as it did
+before — every value in the profile was hard-coded somewhere, and tests assert
+so — and **joinery & furniture**, which is real rather than a placeholder,
+because every engine below the specification already supported it unchanged. It
+proves the seam by differing where the trades differ: no lighting requirement,
+smaller plausible sizes, no lettering on its canvas.
+
+**Next: T18 — Teams and Permissions (Phase 18)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.

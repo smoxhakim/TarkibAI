@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMockupPrompt, pixelDimensions } from './prompt';
 import { SPEC_VERSION, type ProjectSpecData } from '@/lib/spec/schema';
+import { SIGNAGE } from '@/lib/domains/registry';
 
 const spec = (overrides: Partial<ProjectSpecData> = {}): ProjectSpecData => ({
   specVersion: SPEC_VERSION,
@@ -66,7 +67,8 @@ describe('buildMockupPrompt', () => {
         materials: [{ name: 'alucobond noir' }],
         lighting: { type: 'led' },
       }),
-      'concept'
+      'concept',
+      SIGNAGE
     );
 
     expect(result.prompt).toContain('enseigne');
@@ -79,35 +81,36 @@ describe('buildMockupPrompt', () => {
   it('records the facts it used, for auditability', () => {
     const result = buildMockupPrompt(
       spec({ projectType: 'totem', materials: [{ name: 'plexi' }] }),
-      'concept'
+      'concept',
+      SIGNAGE
     );
     expect(result.source).toMatchObject({ projectType: 'totem', materials: ['plexi'] });
   });
 
   it('quotes lettering so the model reproduces it rather than inventing wording', () => {
-    const result = buildMockupPrompt(spec({ lettering: { text: 'ATLAS' } }), 'concept');
+    const result = buildMockupPrompt(spec({ lettering: { text: 'ATLAS' } }), 'concept', SIGNAGE);
     expect(result.prompt).toContain('"ATLAS"');
   });
 
   it('omits lighting when the user chose none', () => {
-    const result = buildMockupPrompt(spec({ lighting: { type: 'none' } }), 'concept');
+    const result = buildMockupPrompt(spec({ lighting: { type: 'none' } }), 'concept', SIGNAGE);
     expect(result.prompt).not.toContain('illumination');
   });
 
   it('asks a site prompt to preserve the existing building', () => {
-    const result = buildMockupPrompt(spec({ projectType: 'enseigne' }), 'site');
+    const result = buildMockupPrompt(spec({ projectType: 'enseigne' }), 'site', SIGNAGE);
     // The point of a site mockup is the real building, not a reimagined one.
     expect(result.prompt).toContain('photograph');
     expect(result.prompt).toMatch(/unchanged|keeping/i);
   });
 
   it('asks a concept prompt for a neutral studio view', () => {
-    const result = buildMockupPrompt(spec({ projectType: 'enseigne' }), 'concept');
+    const result = buildMockupPrompt(spec({ projectType: 'enseigne' }), 'concept', SIGNAGE);
     expect(result.prompt).toContain('neutral');
   });
 
   it('produces a usable prompt from an almost-empty specification', () => {
-    const result = buildMockupPrompt(spec(), 'concept');
+    const result = buildMockupPrompt(spec(), 'concept', SIGNAGE);
     expect(result.prompt.length).toBeGreaterThan(20);
     expect(result.source).toEqual({});
   });
@@ -115,13 +118,14 @@ describe('buildMockupPrompt', () => {
   it('carries the project proportions into the pixel size', () => {
     const result = buildMockupPrompt(
       spec({ dimensions: { width: 8, height: 3, unit: 'm' } }),
-      'concept'
+      'concept',
+      SIGNAGE
     );
     expect(result.widthPx).toBeGreaterThan(result.heightPx);
   });
 
   it('is deterministic', () => {
     const s = spec({ projectType: 'enseigne', materials: [{ name: 'alu' }] });
-    expect(buildMockupPrompt(s, 'concept')).toEqual(buildMockupPrompt(s, 'concept'));
+    expect(buildMockupPrompt(s, 'concept', SIGNAGE)).toEqual(buildMockupPrompt(s, 'concept', SIGNAGE));
   });
 });

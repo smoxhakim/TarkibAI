@@ -36,7 +36,9 @@ export async function listProjects(
 
 export async function createProject(userId: string, input: CreateProjectInput): Promise<Project> {
   return prisma.project.create({
-    data: { userId, title: input.title },
+    // The column defaults to signage, so an omitted domain keeps the behaviour
+    // every project had before T17.
+    data: { userId, title: input.title, ...(input.domain ? { domain: input.domain } : {}) },
   });
 }
 
