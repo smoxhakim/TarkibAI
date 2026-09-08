@@ -18,10 +18,13 @@ import {
 } from '@/lib/materials/service';
 import { calculateProjectMaterials } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `calc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -49,23 +52,26 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: { in: [ownerId, otherId] } } } });
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
   await prisma.material.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 /** A project with an approved spec, one selected material, and a requirement. */
 async function readyProject(requiredQuantity = 25) {
-  const project = await createProject(ownerId, { title: `calc ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `calc ${Math.random()}` });
   await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
   await approveSpec(project.id, ownerId);
 
-  const material = await createMaterial(ownerId, { ...TUBE, name: `${TUBE.name}-${Math.random()}` });
+  const material = await createMaterial(ownerWs, ownerId, { ...TUBE, name: `${TUBE.name}-${Math.random()}` });
   const rows = await selectProjectMaterial(project.id, ownerId, material.id, 'frame');
   await updateProjectMaterialRequirement(project.id, ownerId, rows[0].id, {
     requiredQuantity,
@@ -77,9 +83,9 @@ async function readyProject(requiredQuantity = 25) {
 
 describe('approval gate', () => {
   it('refuses to calculate before the specification is approved', async () => {
-    const project = await createProject(ownerId, { title: 'Unapproved' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Unapproved' });
     await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
-    const material = await createMaterial(ownerId, { ...TUBE, name: `gate-${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...TUBE, name: `gate-${suffix}` });
     const rows = await selectProjectMaterial(project.id, ownerId, material.id, null);
     await updateProjectMaterialRequirement(project.id, ownerId, rows[0].id, {
       requiredQuantity: 25,
@@ -95,7 +101,7 @@ describe('approval gate', () => {
   });
 
   it('refuses when no materials are selected', async () => {
-    const project = await createProject(ownerId, { title: 'No materials' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No materials' });
     await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
     await approveSpec(project.id, ownerId);
 
@@ -136,7 +142,7 @@ describe('calculation and persistence', () => {
 
   it('skips lines with no stated requirement instead of inventing one', async () => {
     const { project } = await readyProject(25);
-    const extra = await createMaterial(ownerId, { ...TUBE, name: `no-req-${suffix}` });
+    const extra = await createMaterial(ownerWs, ownerId, { ...TUBE, name: `no-req-${suffix}` });
     await selectProjectMaterial(project.id, ownerId, extra.id, null);
 
     const summary = await calculateProjectMaterials(project.id, ownerId);
@@ -164,11 +170,11 @@ describe('calculation and persistence', () => {
   });
 
   it('records a reason and no numbers when the engine cannot support a line', async () => {
-    const project = await createProject(ownerId, { title: 'Unsupported' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Unsupported' });
     await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
     await approveSpec(project.id, ownerId);
 
-    const material = await createMaterial(ownerId, { ...TUBE, name: `broken-${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...TUBE, name: `broken-${suffix}` });
     // Force an unsupported state the API layer would normally prevent.
     await prisma.material.update({ where: { id: material.id }, data: { standardLengthMm: null } });
 

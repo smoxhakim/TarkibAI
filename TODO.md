@@ -100,7 +100,9 @@ A user can describe a signage project naturally in Moroccan Darija, receive clar
 ### Deferred out of T2 (deliberately)
 
 - [ ] PDF content extraction — stored and downloadable, but not readable by the vision model
-- [ ] Server-side image content sniffing — type is validated by declared MIME and bound into the upload signature; byte-level sniffing belongs with the validation layer in T16
+- [x] Server-side image content sniffing — done in T16: the first 16 bytes are
+      read at confirmation and a file whose prefix contradicts its declared type
+      is refused
 - [ ] Orphaned-object sweep for abandoned pending uploads
 
 ### Definition of done
@@ -534,43 +536,93 @@ Users can understand how a project changed and identify which project state gene
 
 # Phase 16 — Production Reliability
 
-## T16 — Validation and Safety Layer
+## T16 — Validation and Safety Layer ✅ COMPLETE
 
-- [ ] Calculation validation
-- [ ] Dimension validation
-- [ ] Material availability validation
-- [ ] Unsupported-scenario detection
-- [ ] Stale output detection
-- [ ] User warnings
-- [ ] Approval safeguards
-- [ ] Audit logging
-- [ ] Robust error recovery
+- [x] Calculation validation (missing, unsupported and stale lines, with the engine's own caveats carried through)
+- [x] Dimension validation (slipped decimals, wrong unit, extreme ratio, depth — all warnings, never blockers)
+- [x] Material availability validation (archived, missing stock size, zero price, no stated quantity)
+- [x] Unsupported-scenario detection (surfaced from every engine into one report)
+- [x] Stale output detection — now compares the fields a calculation actually used, not `updatedAt`
+- [x] User warnings (`IntegrityPanel`, grouped by what each severity means)
+- [x] Approval safeguards (quote refused on superseded figures; package refused on wrong ones)
+- [x] Audit logging (append-only, narrow by design, survives project deletion)
+- [x] Robust error recovery (audit and version writes never fail the action they record; an unreadable upload is accepted, not deleted)
+- [x] Byte-level content sniffing at upload confirmation (deferred from T2)
+- [x] Tests (39 unit, 20 integration)
 
-The system must fail safely rather than fabricate technical output.
+### Deferred out of T16 (deliberately)
+
+- [ ] A user-visible audit trail across all projects — the per-project trail is
+      on the project page; an account-wide view is a different screen
+- [ ] Retention or export of audit events — nothing prunes the table yet
+- [ ] Sniffing beyond the first bytes (a full container parse) — the magic
+      number catches the case that matters without decoding untrusted files
+- [ ] Signature checks for DXF, SVG and spreadsheets — they have no reliable
+      magic number, and refusing every unrecognised file would break ordinary
+      attachments to guard against nothing
+- [ ] Re-validating already-issued documents when a project later changes —
+      issued documents are frozen by design and keep their own snapshots
+- [ ] Rate limiting and abuse controls — a hosting concern, not a project one
+
+The system must fail safely rather than fabricate technical output. ✅
 
 ---
 
 # Phase 17 — Industry Abstraction
 
-## T17 — Domain Framework
+## T17 — Domain Framework ✅ COMPLETE
 
-- [ ] Separate core platform entities from industry-specific rules
-- [ ] Domain configuration system
-- [ ] Industry-specific material rules
-- [ ] Industry-specific calculation rules
-- [ ] Industry-specific component schemas
-- [ ] Industry-specific prompts
-- [ ] Industry-specific drawing templates
+- [x] Separate core platform entities from industry-specific rules (`src/lib/domains`)
+- [x] Domain configuration system (`DomainProfile`, registry, `Project.domain`)
+- [x] Industry-specific material rules — measurement models are platform; what a
+      trade *requires* before approval is the profile's decision
+- [x] Industry-specific component schemas (required spec fields, canvas palette)
+- [x] Industry-specific prompts (domain guidance appended to the system prompt)
+- [x] Industry-specific plausibility bounds and mockup phrasing
+- [x] Two real domains: signage & shopfronts, joinery & furniture
+- [x] Tests (21 unit invariants over every profile, 11 integration)
+
+### Deliberately NOT industry-specific
+
+- [x] **Calculation rules stay platform-level.** The T17 checklist listed
+      "industry-specific calculation rules"; measurement models, purchase
+      counts, cutting, waste, cost and tax are the same arithmetic in every
+      trade, and a profile able to reach them would be where a trade acquires
+      its own quietly different numbers. `DomainProfile` has no calculation
+      field, and an integration test runs a joinery project through the
+      unchanged engines to prove it needs none. If a trade ever genuinely needs
+      different arithmetic, that is a new measurement model in the engine, not a
+      hook in the profile.
+- [x] **Drawing templates stay platform-level.** Orthographic projection,
+      dimensions and callouts are geometry, not trade knowledge. What differs by
+      trade is the object vocabulary, which the profile already narrows.
+
+### Deferred out of T17 (deliberately)
+
+- [ ] Changing a project's trade after creation — it decides what "approved"
+      required, so switching it would retroactively change that
+- [ ] The remaining PRD domains (metal fabrication, MDF, pergolas, restaurant
+      branding, custom installations) — each needs its own trade vocabulary and
+      required-field decisions, and inventing them without a practitioner would
+      be guessing. The framework and its invariant tests are what make adding
+      one small.
+- [ ] Per-domain material categories and default libraries
+- [ ] Per-domain document templates — the quote and package templates are
+      trade-neutral today and nothing yet needs them not to be
+- [ ] Domain-specific Darija vocabulary lists beyond the prompt guidance
 
 Initial domain:
 
-- Signage / fabrication
+- Signage / fabrication ✅
+
+Second domain, shipped to prove the seam:
+
+- Joinery / furniture ✅
 
 Potential future domains:
 
 - Restaurant/store branding
 - Metal fabrication
-- Woodworking
 - MDF fabrication
 - Pergolas
 - Custom installations
@@ -580,44 +632,96 @@ Potential future domains:
 
 # Phase 18 — Multi-User Workspaces
 
-## T18 — Teams and Permissions
+## T18 — Teams and Permissions ✅ COMPLETE
 
-- [ ] Workspace model
-- [ ] Members
-- [ ] Roles
-- [ ] Permissions
-- [ ] Project access
-- [ ] Shared materials
-- [ ] Team activity
-- [ ] Secure workspace authorization
+- [x] Workspace model (owns projects, materials, costing rules and the company block)
+- [x] Members (`WorkspaceMember` — this row IS the authorization)
+- [x] Roles (owner, admin, designer, sales, production, worker)
+- [x] Permissions (matrix written out per role, unit-tested exactly)
+- [x] Project access (`assertProjectAccess` resolves workspace then membership)
+- [x] Shared materials (one library per business, not per person)
+- [x] Team activity (audit records invites, joins, role changes, removals)
+- [x] Secure workspace authorization (28 integration tests on isolation and roles)
+- [x] Invitations by email with a token, expiry, revocation and an identity check
+- [x] Backfill giving every existing user a personal workspace, verified to move nothing
+- [x] Branded `WorkspaceId`, so a user id can never be passed where a workspace belongs
+- [x] Quote numbering moved to the business — found by a test during this milestone
+- [x] Tests (36 unit, 28 integration for workspaces alone)
 
-Potential roles:
+### Deliberately NOT built
 
-- Super Admin
-- Owner
-- Designer
-- Sales
-- Production Manager
-- Worker
+- [x] **Super Admin.** The PRD lists it among possible roles, but it is a
+      platform-operator concept, not a workspace one: it would mean an account
+      that can read every business's data. Nothing in the product needs it, and
+      building a cross-tenant superuser without a concrete need is the single
+      most dangerous thing this phase could add.
 
-This phase must be designed as a deliberate workspace architecture, not retrofitted through ad-hoc permissions.
+### Deferred out of T18 (deliberately)
+
+- [ ] Sending invitation emails — no mail provider is wired (`resend` is still
+      a deferred dependency). The link is handed to the inviter, and the
+      interface says plainly that nothing was sent.
+- [ ] Transferring ownership of a workspace — the owner cannot currently hand
+      over; they can promote an admin, but the final transfer needs a
+      confirmation flow of its own
+- [ ] Deleting a shared workspace — cascade would remove every project, quote
+      and package, which needs more than a button
+- [ ] Leaving a workspace you were invited to (self-removal)
+- [ ] Per-project access within a workspace — membership currently grants the
+      role's permissions across every project the business owns
+- [ ] Moving a project between workspaces
+- [ ] Clerk Organizations — TARKIB's own membership model is the source of
+      truth; syncing to the identity provider's is a separate decision
+
+This phase must be designed as a deliberate workspace architecture, not retrofitted through ad-hoc permissions. ✅
 
 ---
 
 # Phase 19 — Collaboration
 
-## T19 — Client and Team Collaboration
+## T19 — Client and Team Collaboration ✅ COMPLETE
 
-Potential future capabilities:
+The only milestone whose brief was "potential future capabilities" with no
+definition of done, so the scope below was chosen deliberately rather than read
+off a list. What ties it together: one link a client can open, one thread both
+sides write in, and nothing internal reachable from either.
 
-- [ ] Share project
-- [ ] Client review
-- [ ] Client approval
-- [ ] Comments
-- [ ] Revision requests
-- [ ] Team notifications
-- [ ] Document sharing
-- [ ] Collaborative workflows
+- [x] Share project (`ProjectShare` — scoped, revocable, optionally expiring)
+- [x] Client review (a public page needing no account)
+- [x] Client approval (recorded as a named message, not a status flag)
+- [x] Comments (one thread carrying team and client messages)
+- [x] Revision requests (a typed entry in the same thread)
+- [x] Team notifications (in-app; no email, and the interface says so)
+- [x] Document sharing (the issued quote, via a short-lived signed URL)
+- [x] Collaborative workflows — the approve / request-changes / reply loop
+- [x] `ShareView` + `assertShareSafe`: the third client-safe boundary
+- [x] `(app)` route group so the client page carries no product chrome
+- [x] Tests (18 integration, including leak and token-probing tests)
+- [x] Verified live: the share page and API serve with no session while
+      `/dashboard` still redirects, and the approval loop was driven end to end
+      in a browser
+
+### Deferred out of T19 (deliberately)
+
+- [ ] Emailing a share link — no mail provider (`resend` is still deferred).
+      The link is handed to the sender, and the UI says nothing was sent.
+- [ ] @mentions — needs a member picker and parsing; the thread notifies the
+      whole workspace today, which is honest for a small business
+- [ ] Client comments on a specific line, drawing or region — the thread is
+      per project
+- [ ] Editing or deleting a posted message — the thread is a record, and a
+      client's approval in particular should not be editable after the fact
+- [ ] Per-share passcodes or client accounts — a longer credential and an
+      expiry were judged the right trade for a link somebody has to be able to
+      open from an email on a phone
+- [ ] Realtime updates — the thread refreshes on navigation
+- [ ] Notification preferences and digests — there is one channel to configure
+
+### Definition of done (chosen for this milestone)
+
+A user can send a client a link that shows the project, the quote and the
+visuals without exposing anything internal; the client can approve or ask for
+changes; the team sees it in the app; and the link can be withdrawn. ✅
 
 ---
 
@@ -722,14 +826,95 @@ Completed:
 - [x] **T13 — Client Quote System** (Phase 13)
 - [x] **T14 — Production PDF** (Phase 14)
 - [x] **T15 — Full Version History** (Phase 15)
+- [x] **T16 — Validation and Safety Layer** (Phase 16)
+- [x] **T17 — Domain Framework** (Phase 17)
+- [x] **T18 — Teams and Permissions** (Phase 18)
+- [x] **T19 — Client and Team Collaboration** (Phase 19)
 
 Active milestone:
 
-- [ ] None. T16 has not been started.
+- [ ] None. T20 has not been started.
 
 Next milestone:
 
-- [ ] **T16 — Validation and Safety Layer** (Phase 16)
+- [ ] **T20 — Commercial and Operational Features** (Phase 20)
+
+### T19 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 471 passed |
+| Integration tests | 288 passed against Neon |
+| Production build | passed, 77 routes |
+| Migrations | 23 applied |
+| Auth boundary | verified live: `/share/<token>` and `/api/share/<token>` return 200 with no session; `/dashboard` still 307s to sign-in; an unknown token 404s |
+| Leak tests | a costed project with a supplier on record, shared: no internal amount, no supplier, no project/workspace/user id, no member email |
+| Token probing | unknown, revoked and expired links return the same status and the same message |
+| Client loop | driven end to end in a browser: approve → confirmation, message in the thread, notification delivered to the team |
+
+**A real defect was found by looking at the client page.** It rendered inside
+the root layout, so a client opening their supplier's proposal saw TARKIB's
+name, a "Sign in" link and a "Get started" button. The header moved into an
+`(app)` route group; the share page also sets its own title and `noindex`.
+
+### T18 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 471 passed |
+| Integration tests | 270 passed against Neon |
+| Production build | passed, 69 routes |
+| Migrations | 22 applied |
+| Backfill | verified: every user has a personal workspace, and zero projects or materials changed hands |
+| Cross-workspace isolation | tested: project, material, listing and workspace all 404 for a non-member |
+| Role enforcement | tested at the service layer, not the interface: worker and production refused cost, designer refused quoting, sales refused design editing |
+| Degradation | tested: a worker opens the project and the integrity report without the cost section |
+| Owner invariants | tested: cannot remove the owner, demote the last owner, or have an admin change who the owner is |
+| Invitations | tested: wrong account, expired and revoked links all refused |
+
+**Two real defects were found during this milestone, both by the work itself.**
+The branded `WorkspaceId` exposed twenty-four call sites that had silently kept
+passing a user id. And a test exposed that quote numbering was still per-person,
+so two members of one business could each issue Q-2026-0001; it now runs per
+workspace, backfilled so no issued quote changed its number.
+
+### T17 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 435 passed |
+| Integration tests | 241 passed against Neon |
+| Production build | passed, 61 routes |
+| Migrations | 20 applied |
+| No behaviour change for signage | tested: the required field list and plausibility bounds are asserted to be the ones that shipped |
+| The seam is real | tested: one specification is blocked for signage and approves for joinery |
+| Engines are trade-independent | tested: a joinery project calculates, cuts and costs through the unchanged engines |
+
+### T16 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 414 passed |
+| Integration tests | 230 passed against Neon |
+| Production build | passed, 61 routes |
+| Migrations | 19 applied |
+| Quote gate | tested: a quote whose spec moved after drafting is refused and stays a draft |
+| Package gate | tested: unplaced pieces refuse a package; absent data still allows one |
+| Audit | tested: survives deletion of the project it describes |
+| Schema correction | the first T16 migration left the audit FK as RESTRICT, which made deleting a user impossible; a second migration cascades it |
+
+**The stricter gate found a real false positive.** Staleness compared
+`Material.updatedAt`, so archiving or renaming a material marked every line
+using it out of date. Harmless as a warning; as a blocker it refused a quote
+that was perfectly sound. It now compares the fields the calculation used.
 
 ### T15 verification record
 

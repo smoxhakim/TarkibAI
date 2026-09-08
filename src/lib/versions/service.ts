@@ -16,6 +16,7 @@ import {
   type VersionSnapshot,
 } from './snapshot';
 import { diffSnapshots, type VersionDiff } from './diff';
+import { recordAudit } from '@/lib/audit/service';
 
 /** Why a version was recorded. */
 export const VERSION_REASONS = [
@@ -75,7 +76,7 @@ export async function captureSnapshot(
       orderBy: { createdAt: 'asc' },
     }),
     db.projectCost.findFirst({ where: { projectId }, orderBy: { computedAt: 'desc' } }),
-    db.project.findUnique({ where: { id: projectId }, select: { userId: true } }),
+    db.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } }),
     db.diagram.findMany({ where: { projectId }, select: { version: true }, orderBy: { version: 'asc' } }),
     db.quote.findMany({
       where: { projectId, status: 'issued' },
@@ -134,7 +135,7 @@ export async function captureSnapshot(
           computedAt: costRow.computedAt.toISOString(),
           currency: projectRow
             ? (await db.costSettings.findUnique({
-                where: { userId: projectRow.userId },
+                where: { workspaceId: projectRow.workspaceId },
                 select: { currency: true },
               }))?.currency ?? null
             : null,
@@ -398,7 +399,7 @@ export async function restoreVersion(versionId: string, userId: string): Promise
     throw badRequest('This version has no specification snapshot, so there is nothing to restore.');
   }
 
-  return prisma.$transaction(async (tx) => {
+  const recorded = await prisma.$transaction(async (tx) => {
     const latestSpec = await tx.projectSpec.findFirst({
       where: { projectId: version.projectId },
       orderBy: { version: 'desc' },
@@ -443,4 +444,14 @@ export async function restoreVersion(versionId: string, userId: string): Promise
       tx
     );
   });
+
+  await recordAudit({
+    userId,
+    projectId: version.projectId,
+    action: 'version.restored',
+    summary: `Restored the project from version ${version.versionNumber} (${version.label}).`,
+    detail: { restoredFromVersionId: version.id, newVersionId: recorded.id },
+  });
+
+  return recorded;
 }

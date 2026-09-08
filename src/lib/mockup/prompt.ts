@@ -1,4 +1,5 @@
 import type { ProjectSpecData } from '@/lib/spec/schema';
+import type { DomainProfile } from '@/lib/domains/types';
 
 /**
  * Builds an image prompt from the project's structured specification.
@@ -79,7 +80,8 @@ function describeDimensions(spec: ProjectSpecData): string | null {
 
 export function buildMockupPrompt(
   spec: ProjectSpecData,
-  kind: 'concept' | 'site'
+  kind: 'concept' | 'site',
+  domain: DomainProfile
 ): PromptResult {
   const facts: string[] = [];
   const source: Record<string, unknown> = {};
@@ -128,12 +130,16 @@ export function buildMockupPrompt(
     source.finishNotes = spec.finishNotes;
   }
 
-  const description = facts.length > 0 ? facts.join(', ') : 'a fabricated commercial sign';
+  // The fallback names the trade rather than always saying "sign". It is only
+  // ever reached when the specification records nothing at all, and generation
+  // is already refused in that case — but a joinery project should not describe
+  // itself as signage on the way to being refused.
+  const description = facts.length > 0 ? facts.join(', ') : domain.mockupSubject;
 
   const prompt =
     kind === 'site'
-      ? `Photorealistic visualisation: install this signage on the building in the photograph, ` +
-        `keeping the existing architecture, lighting and perspective unchanged. The sign is ` +
+      ? `Photorealistic visualisation: install this ${domain.noun.singular} in the photographed ` +
+        `location, keeping the existing architecture, lighting and perspective unchanged. It is ` +
         `${description}. Blend it naturally into the scene at a realistic scale.`
       : `Professional product visualisation of ${description}. Clean neutral studio background, ` +
         `straight-on view, realistic materials and lighting, no people, no extra text beyond what is specified.`;

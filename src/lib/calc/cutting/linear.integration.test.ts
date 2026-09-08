@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { createProject } from '@/lib/projects/service';
 import { createMaterial } from '@/lib/materials/service';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 import {
   addLinearCut,
   addPiece,
@@ -22,7 +23,9 @@ import {
 
 const suffix = `lin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 let barId: string;
 let sheetId: string;
 
@@ -33,8 +36,10 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
-  const bar = await createMaterial(ownerId, {
+  const bar = await createMaterial(ownerWs, ownerId, {
     name: `Tube 40x40 ${suffix}`,
     category: 'Metal',
     customCategory: false,
@@ -45,7 +50,7 @@ beforeAll(async () => {
   });
   barId = bar.id;
 
-  const sheet = await createMaterial(ownerId, {
+  const sheet = await createMaterial(ownerWs, ownerId, {
     name: `Alu ${suffix}`,
     category: 'Panel',
     customCategory: false,
@@ -63,11 +68,12 @@ afterAll(async () => {
   await prisma.cuttingPiece.deleteMany({ where: { project: { userId: { in: [ownerId, otherId] } } } });
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
   await prisma.material.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
-const newProject = () => createProject(ownerId, { title: `linear ${Math.random()}` });
+const newProject = () => createProject(ownerWs, ownerId, { title: `linear ${Math.random()}` });
 
 describe('cut lists', () => {
   it('refuses cut lengths on a sheet material', async () => {
@@ -79,7 +85,7 @@ describe('cut lists', () => {
 
   it("refuses another user's material, and another user's cuts", async () => {
     const project = await newProject();
-    const foreign = await createMaterial(otherId, {
+    const foreign = await createMaterial(otherWs, otherId, {
       name: `Foreign bar ${suffix}`,
       category: 'Metal',
       customCategory: false,

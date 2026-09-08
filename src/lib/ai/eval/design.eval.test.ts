@@ -17,10 +17,12 @@ import { runConversationTurn } from '@/lib/ai/conversation-service';
 import { isAiConfigured } from '@/lib/ai/config';
 import { approveProposal, listProposals } from '@/lib/design/service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const enabled = isAiConfigured();
 const suffix = `deval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let userId: string;
+let workspaceId: WorkspaceId;
 
 const SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -38,6 +40,7 @@ beforeAll(async () => {
     data: { clerkId: `de-${suffix}`, email: `de-${suffix}@example.test` },
   });
   userId = user.id;
+  workspaceId = asWorkspaceId((await ensurePersonalWorkspace(userId)).id);
 });
 
 afterAll(async () => {
@@ -48,7 +51,7 @@ afterAll(async () => {
 });
 
 async function readyProject() {
-  const project = await createProject(userId, { title: `design eval ${Math.random()}` });
+  const project = await createProject(workspaceId, userId, { title: `design eval ${Math.random()}` });
   await updateDraftSpec(project.id, userId, SPEC);
   await approveSpec(project.id, userId);
   await seedScene(project.id, userId);
@@ -107,7 +110,7 @@ describe.skipIf(!enabled)('conversational design editing', () => {
   it(
     'does not invent a size when asked to change an empty canvas',
     async () => {
-      const project = await createProject(userId, { title: `empty canvas ${Math.random()}` });
+      const project = await createProject(workspaceId, userId, { title: `empty canvas ${Math.random()}` });
       await updateDraftSpec(project.id, userId, SPEC);
       await approveSpec(project.id, userId);
       // Deliberately not seeded: there is nothing to widen.

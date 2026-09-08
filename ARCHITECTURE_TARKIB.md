@@ -2177,3 +2177,248 @@ package the capture is outside the transaction and its failure is logged: the
 design is already applied and the PDF already stored, and losing a history entry
 is not a reason to undo them. The document's `projectVersionId` is simply absent
 in that case rather than pointing at nothing.
+
+### T16 — Validation and Safety Layer (Phase 16)
+
+**Severity is a promise about what happens next.** `blocker` means an action is
+refused; `warning` means it proceeds and the user is told first; `note` means
+worth knowing. Getting this wrong in either direction is a product failure —
+refusing legitimate work, or letting a wrong number reach a client — so the
+boundary is written down rather than decided per check.
+
+**A plausibility check is never a blocker.** An 80 m sign is unusual, not
+impossible. Dimension checks warn about what looks like a slipped decimal and
+say so in those words; they never stop the job, because the alternative is the
+tool deciding what a user is allowed to build.
+
+**Staleness IS a blocker.** A superseded purchase count is not merely uncertain
+— it is a figure the system knows no longer follows from the project. Putting
+one on a quote is the exact failure this layer exists to prevent, so a quote is
+now refused while any material line or the cost is out of date.
+
+**The two gates are deliberately different.** A quote is refused for anything
+that makes the price wrong, absent data included: a line never calculated means
+the total is missing it. A package is refused only for data that is present and
+WRONG — superseded figures, and pieces the optimiser could not place that a plan
+would imply are being cut. Absent data stays a gap printed on the document,
+because T14 promised a package can be built from a drawing alone and that
+promise is worth keeping.
+
+**The stricter gate exposed a false positive that had been harmless.** Staleness
+compared `Material.updatedAt` against `calculatedAt`, which marks a line stale
+for edits that cannot change a figure: renaming a material, changing its
+supplier, or archiving it. As a warning that was noise; as a blocker it stops
+real work. It now compares the five fields the calculation actually used —
+already snapshotted on the row since T4 — against the material now. Without a
+readable snapshot it falls back to the timestamp, which over-reports: a line
+wrongly called stale costs a recalculation, a stale line called current reaches
+a client.
+
+**One finding per fact.** A material with no stated quantity is reported as
+having no quantity, not additionally as never calculated. The same problem told
+twice makes a project read as worse than it is, and a list nobody trusts is a
+list nobody reads.
+
+**The audit trail is deliberately narrow.** Approvals, issues, generations,
+restores and removals. Not reads, not recalculations. A trail recording
+everything is one nobody scans, and a trail nobody scans provides no safety.
+
+**Writing an event never fails the action it records.** Every call site is
+something that already succeeded — a quote issued, a package stored. Undoing
+real work to protect a record of it is backwards, so failures are logged and the
+gap shows as a missing entry.
+
+**Audit events survive the project they describe.** `Project` is set null on
+delete rather than cascading, because "this project existed and was deleted" is
+the entry that matters most.
+
+**Content sniffing accepts what it does not recognise.** T2 bound the declared
+MIME type into the upload signature, which validates what the browser said, not
+what arrived. The bytes are now checked at confirm time and a file whose prefix
+contradicts its declared type is refused — that is the case that matters, since
+the vision model is handed image bytes directly. A prefix the module has never
+been taught is accepted: a DXF or a supplier's spreadsheet has no magic number
+here, and refusing every unknown file would break ordinary attachments to guard
+against nothing. A failure to read the bytes is likewise not a rejection —
+storage being briefly unreachable is not evidence that a file is lying.
+
+**Only the first sixteen bytes are fetched.** A ranged read, because pulling a
+20 MB upload through the app server to check a magic number would be a real cost
+on every confirmed file.
+
+### T17 — Domain Framework (Phase 17)
+
+**A profile decides what is asked, never what is calculated.** Required
+specification fields, agent vocabulary, canvas palette, dimension plausibility
+and mockup phrasing differ by trade. Material requirements, purchase counts,
+cutting, waste, cost and tax do not — a 6 m bar divides the same way whether it
+becomes a sign frame or a pergola rafter. Keeping calculation out of
+`DomainProfile` is deliberate: a profile that could reach it would be the place
+a trade quietly acquires its own arithmetic, which is exactly what PRD 24 asks
+to avoid by isolating industry rules FROM reusable components rather than
+threading them through.
+
+**Anything a profile cannot express means the seam is wrong.** The type is
+narrow on purpose, and widening it until it can express everything would turn it
+back into the thing it replaced.
+
+**A second real domain, not an abstraction with one implementation.** Joinery is
+in because every engine below the specification already supports it unchanged —
+a wardrobe carcass nests like a sign face, a pergola rafter cuts like a sign
+frame — and because a framework with a single profile is untested machinery. It
+proves the seam by differing where the trades actually differ: no lighting
+requirement, a smaller plausible size, no lettering in its canvas vocabulary.
+
+**Signage keeps exactly the behaviour it shipped with.** Every value in the
+signage profile was hard-coded somewhere before T17, and a test asserts the
+required field list and the plausibility bounds are the ones that shipped. The
+`domain` column defaults to signage, so no existing project changes.
+
+**Narrowing applies to what is offered, not to what is stored.** The scene
+schema keeps the full object vocabulary; a domain declares a subset. Adding a
+lettering object to a joinery project is refused, but a scene that already
+contains one stays readable and editable — otherwise changing a project's trade
+would make its own design impossible to open.
+
+**`getDomain` falls back rather than throwing.** A project row carrying an id
+this build does not know — a domain removed, or a database ahead of the code —
+should still open. Signage is the fallback because it is the default and the
+stricter set, and the fallback is logged so it does not pass unnoticed.
+
+**Completeness gained a reader table.** `missingFields` was nine hand-written
+`if` statements; it is now a lookup from field key to where that field lives.
+That is what makes the required set a parameter rather than a constant, and it
+means a domain cannot require a field nothing knows how to read — a registry
+test asserts every domain's required set comes back missing from an empty
+specification.
+
+**The domain paragraph is appended to the system prompt, not interpolated
+through it.** The trade-specific vocabulary stays one readable block a person
+can check against the profile, instead of conditionals scattered through
+instructions that are identical everywhere.
+
+**The trade is chosen at creation and not changed afterwards.** It decides which
+questions a project must answer before approval, and switching it under an
+approved specification would retroactively change what "approved" meant.
+
+### T18 — Workspaces and Permissions (Phase 18)
+
+**Ownership moved from a person to a business, at one gate.** Before T18
+`assertProjectAccess` compared `project.userId` to the caller. It now resolves
+the project's workspace and requires a membership row. The signature is
+unchanged on purpose: eighty-odd call sites inherited the new rule without each
+having to be reasoned about, which is the entire value of having had one gate.
+`Project.userId` and `Material.userId` survive as "who created this" and are
+never consulted for access again.
+
+**Everyone got a personal workspace, and nothing changed hands.** The migration
+is hand-written rather than generated, because the generated version would
+`ADD COLUMN ... NOT NULL` onto populated tables and drop the settings' owner
+link without moving what it pointed at. Every existing row lands in the personal
+workspace of the user who owned it, and a check afterwards confirmed zero
+mismatches. A personal workspace cannot be left or deleted, so there is no state
+in which somebody is signed in with nowhere to work.
+
+**The workspace id is a branded type, and that was not decoration.** Turning
+twenty-four call sites from "pass the user id" to "pass the workspace id" was a
+refactor in which every single site typechecked either way, and a mistake at any
+one of them reads another business's data or writes into it. `WorkspaceId` is a
+branded string that only `asWorkspaceId` can produce, so the compiler found all
+twenty-four and will find the twenty-fifth.
+
+**The permission matrix is written out per role, not derived.** Derivation by
+seniority reads neatly and hides the question that matters. Sales sees cost and
+cannot touch the canvas; production manages the material library and cannot see
+cost. Neither falls out of a hierarchy, and a test asserts each role's exact set
+so widening one is a deliberate edit rather than a diff nobody reads.
+
+**Cost visibility is enforced by refusing the read, not by filtering it.** A
+role without `cost.view` never receives the ProjectCost row at all, so an
+internal column added later cannot leak through a serialiser somebody forgot to
+update. Same construction as the client-safe quote boundary in T13, applied to a
+second audience.
+
+**Which forced three aggregators to degrade rather than fail.** The integrity
+report, the quote view and the project page all read cost. A worker opening a
+project must see the project minus the cost panel, not an error page, so they
+ask `hasProjectPermission` and omit the section. The alternative — catching a
+403 they provoked on purpose — hides real failures.
+
+**Missing and forbidden are both 404 ACROSS workspaces, and 403 within one.** A
+403 on another business's project would confirm the id is real and let anyone
+enumerate it. Inside a workspace you already know the project exists, so a 403
+naming the missing permission is safe and actionable.
+
+**Owner is an ownership check, not a permission.** An admin holds every entry in
+the matrix and still cannot promote itself or demote the owner, because a
+permission is something that can be granted and this is not. The workspace is
+also refused any transition that would leave it with no owner.
+
+**No invitation email is sent, and the interface says so.** There is no mail
+provider wired into the product, and pretending to deliver an invitation would
+leave one nobody receives. The token is returned and the inviter shares the
+link. Accepting requires the signed-in account's email to match the address
+invited — without that, a leaked link is a way into somebody's business, which
+is the whole risk of a token in a URL.
+
+**A revoked invitation is marked, not deleted.** Deleting would free the unique
+(workspace, email) slot and allow the same token to be recreated; a link already
+shared should stay dead.
+
+### T19 — Client and Team Collaboration (Phase 19)
+
+**The share is the product's only unauthenticated read surface**, so it is
+built assuming the link has already been forwarded to somebody the sender never
+intended. The token is the whole credential: there is no second check behind
+it, which is why the payload has to be safe on its own rather than safe because
+of who is reading it.
+
+**Third client-safe boundary, same construction as the first two.** A quote
+hides internal cost from a document (T13); a package hides prices from the
+workshop (T14); `ShareView` hides everything internal from somebody outside the
+business entirely. Absent by construction: cost, margin, purchase prices,
+supplier names, quantities, waste, cutting plans, the production package, the
+audit trail, version history, and workspace membership.
+
+**Ids are private too.** A share carries no project id, workspace id or user id.
+Handing an outside reader an internal identifier invites them to try it
+somewhere else, and none of them is needed to render the page.
+
+**Members appear to a client as the business, never by name.** The client is
+dealing with a company; which colleague replied is not theirs to have, and an
+email address in a shared thread is a leak with no upside.
+
+**Every dead link fails identically.** Unknown, revoked and expired all report
+that the link does not work, in the same words. Distinguishing them would tell
+somebody probing tokens which of their guesses had once been real.
+
+**A revoked share is marked, not deleted.** Deleting would free the token and
+also detach the client messages that arrived through it, which are part of the
+project's record.
+
+**An approval is a message, not a flag.** It is recorded as something a named
+person said at a time, in the same thread as the team's replies. A project
+marked "approved" with nobody attached is not evidence of anything, and a
+revision request and the answer to it belong next to each other rather than in
+two places somebody has to reconcile.
+
+**The client-facing page has no product chrome, and that was a defect found by
+looking at it.** The share page originally rendered inside the root layout, so a
+client opening their supplier's proposal saw TARKIB's name, a "Sign in" link and
+a "Get started" button — a business's document turned into somebody else's
+marketing surface. The header moved into an `(app)` route group; the root layout
+is now the document shell only. The share page also sets its own title and
+`robots: noindex`, because a client's browser tab should carry their supplier's
+name and a client link has no business in a search index.
+
+**Notifications are in-app only, and the interface says so.** No mail provider
+is wired into the product. A notification nobody receives is worse than one the
+user has to come back and read, and an invitation or share that claims to have
+been emailed is worse still — so both hand the link back to the sender instead.
+
+**Writing a notification never fails the thing it was about**, the same rule the
+audit trail and version capture follow.
+
+**Marking notifications read is scoped to the caller's own rows**, so an id from
+somewhere else does nothing rather than being rejected — there is no version of
+this where one user changes another's state.

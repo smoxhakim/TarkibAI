@@ -27,10 +27,13 @@ import {
   updateCostSettings,
 } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `cost-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -49,9 +52,11 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
   // 30% labour, 500 fixed transport, 10% install, 25% margin, 20% TVA.
-  await updateCostSettings(ownerId, {
+  await updateCostSettings(ownerWs, {
     laborType: 'percent',
     laborBp: 3000,
     laborCents: 0,
@@ -71,18 +76,18 @@ afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: { in: [ownerId, otherId] } } } });
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
   await prisma.material.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
-  await prisma.costSettings.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 /** A project with materials calculated to a known cost of 100000 (5 x 20000). */
 async function costedProject() {
-  const project = await createProject(ownerId, { title: `cost ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `cost ${Math.random()}` });
   await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
   await approveSpec(project.id, ownerId);
 
-  const material = await createMaterial(ownerId, {
+  const material = await createMaterial(ownerWs, ownerId, {
     name: `tube-${Math.random()}`,
     category: 'Metal',
     customCategory: false,
@@ -105,20 +110,20 @@ describe('cost settings', () => {
     const fresh = await prisma.user.create({
       data: { clerkId: `kd-${suffix}`, email: `kd-${suffix}@example.test` },
     });
-    const settings = await getCostSettings(fresh.id);
+    const freshWs = asWorkspaceId((await ensurePersonalWorkspace(fresh.id)).id);
+    const settings = await getCostSettings(freshWs);
 
     // Inventing a default margin would silently mis-price someone's first quote.
     expect(settings.marginBp).toBe(0);
     expect(settings.taxBp).toBe(0);
     expect(settings.laborBp).toBe(0);
-
-    await prisma.costSettings.deleteMany({ where: { userId: fresh.id } });
+    await prisma.workspace.deleteMany({ where: { members: { some: { userId: fresh.id } } } });
     await prisma.user.delete({ where: { id: fresh.id } });
   });
 
   it('keeps settings private per user', async () => {
-    const mine = await getCostSettings(ownerId);
-    const theirs = await getCostSettings(otherId);
+    const mine = await getCostSettings(ownerWs);
+    const theirs = await getCostSettings(otherWs);
     expect(mine.marginBp).toBe(2500);
     expect(theirs.marginBp).toBe(0);
   });
@@ -126,13 +131,13 @@ describe('cost settings', () => {
 
 describe('materials gate', () => {
   it('refuses to cost a project whose materials are not calculated', async () => {
-    const project = await createProject(ownerId, { title: 'Uncosted' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Uncosted' });
     await expect(computeProjectCost(project.id, ownerId)).rejects.toMatchObject({ status: 400 });
     expect(await prisma.projectCost.count({ where: { projectId: project.id } })).toBe(0);
   });
 
   it('reports why costing is blocked instead of returning an empty result', async () => {
-    const project = await createProject(ownerId, { title: 'Blocked' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Blocked' });
     const view = await getProjectCost(project.id, ownerId);
     expect(view.cost).toBeNull();
     expect(view.blockedReason).toContain('Calculate the project materials');
@@ -174,7 +179,7 @@ describe('cost calculation', () => {
     const { project } = await costedProject();
     const cost = await computeProjectCost(project.id, ownerId);
 
-    await updateCostSettings(ownerId, {
+    await updateCostSettings(ownerWs, {
       laborType: 'percent',
       laborBp: 9000,
       laborCents: 0,
@@ -195,7 +200,7 @@ describe('cost calculation', () => {
     expect(stored.laborCostCents).toBe(30000);
 
     // restore for other tests
-    await updateCostSettings(ownerId, {
+    await updateCostSettings(ownerWs, {
       laborType: 'percent',
       laborBp: 3000,
       laborCents: 0,
@@ -273,7 +278,7 @@ describe('client-safe boundary', () => {
     // mathematically identical — tax = (internal x 1.25) x 0.20 = internal x 0.25
     // — which would make a value-based leak assertion unsatisfiable on a
     // correct result.
-    await updateCostSettings(ownerId, {
+    await updateCostSettings(ownerWs, {
       laborType: 'percent',
       laborBp: 3000,
       laborCents: 0,
@@ -302,7 +307,7 @@ describe('client-safe boundary', () => {
     expect(json).not.toContain(String(cost.marginCents));
     expect(json).not.toContain(String(cost.materialsCostCents));
 
-    await updateCostSettings(ownerId, {
+    await updateCostSettings(ownerWs, {
       laborType: 'percent',
       laborBp: 3000,
       laborCents: 0,
@@ -319,7 +324,7 @@ describe('client-safe boundary', () => {
   });
 
   it('returns null rather than zeros when nothing has been costed', async () => {
-    const project = await createProject(ownerId, { title: 'Never costed' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Never costed' });
     expect(await getClientSafeCost(project.id, ownerId)).toBeNull();
   });
 

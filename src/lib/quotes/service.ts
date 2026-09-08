@@ -1,8 +1,15 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import {
+  assertProjectAccess,
+  assertProjectPermission,
+  hasProjectPermission,
+} from '@/lib/projects/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
 import { recordVersion } from '@/lib/versions/service';
+import { blockersFor, describeBlockers } from '@/lib/validation/service';
+import { asWorkspaceId, type WorkspaceId } from '@/lib/workspaces/access';
+import { recordAudit } from '@/lib/audit/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { inlineStoredImage } from '@/lib/pdf/image';
 import { buildObjectKey } from '@/lib/storage/keys';
@@ -50,6 +57,15 @@ async function loadQuote(quoteId: string, userId: string): Promise<QuoteWithLine
   if (!quote) throw notFound('Quote');
   await assertProjectAccess(quote.projectId, userId);
   return quote;
+}
+
+/** The workspace whose company block and rules a quote belongs to. */
+async function quoteWorkspace(quote: { projectId: string }): Promise<WorkspaceId> {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: quote.projectId },
+    select: { workspaceId: true },
+  });
+  return asWorkspaceId(project.workspaceId);
 }
 
 export async function listQuotes(projectId: string, userId: string): Promise<QuoteWithLines[]> {
@@ -108,12 +124,16 @@ function issueBlockers(quote: QuoteWithLines, settings: QuoteSettings): string[]
 
 export async function getQuoteView(quoteId: string, userId: string): Promise<QuoteView> {
   const quote = await loadQuote(quoteId, userId);
+  // A role that may read quotes but not costs — a production manager, say —
+  // sees the quote's own figures without the comparison against the internal
+  // calculation. The comparison is omitted, not faked.
+  const canSeeCost = await hasProjectPermission(quote.projectId, userId, 'cost.view');
   const [settings, costView] = await Promise.all([
-    getQuoteSettings(userId),
-    getProjectCost(quote.projectId, userId),
+    getQuoteSettings(await quoteWorkspace(quote)),
+    canSeeCost ? getProjectCost(quote.projectId, userId) : Promise.resolve(null),
   ]);
 
-  const calculatedSubtotalCents = costView.cost?.clientSubtotalCents ?? null;
+  const calculatedSubtotalCents = costView?.cost?.clientSubtotalCents ?? null;
 
   return {
     quote,
@@ -147,15 +167,16 @@ function commercialTermsFromCost(snapshot: unknown): { taxBp: number; currency: 
  * writing it. The cost is that abandoned drafts leave gaps in the sequence;
  * that is preferable to a document whose reference changes under the user.
  *
- * The unique constraint on (userId, sequence) is the real guard — two requests
- * racing will collide there rather than silently issuing the same number twice.
+ * The unique constraint on (workspaceId, sequence) is the real guard — two
+ * members racing will collide there rather than silently handing two clients
+ * the same reference.
  */
 async function allocateNumber(
-  userId: string,
+  workspaceId: WorkspaceId,
   prefix: string
 ): Promise<{ sequence: number; number: string }> {
   const last = await prisma.quote.findFirst({
-    where: { userId },
+    where: { workspaceId },
     orderBy: { sequence: 'desc' },
     select: { sequence: true },
   });
@@ -177,7 +198,7 @@ export async function createQuote(
   userId: string,
   input: CreateQuotePayload
 ): Promise<QuoteWithLines> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'quote.create');
 
   const { cost, blockedReason } = await getProjectCost(projectId, userId);
   if (!cost) {
@@ -187,10 +208,14 @@ export async function createQuote(
     );
   }
 
-  const [project, settings, costSettings] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { title: true } }),
-    getQuoteSettings(userId),
-    getCostSettings(userId),
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { title: true, workspaceId: true },
+  });
+  const workspaceId = asWorkspaceId(project.workspaceId);
+  const [settings, costSettings] = await Promise.all([
+    getQuoteSettings(workspaceId),
+    getCostSettings(workspaceId),
   ]);
 
   // The rates that produced this cost, not today's — otherwise editing the tax
@@ -211,11 +236,12 @@ export async function createQuote(
   );
 
   for (let attempt = 0; attempt < MAX_NUMBER_ATTEMPTS; attempt += 1) {
-    const { sequence, number } = await allocateNumber(userId, settings.numberPrefix);
+    const { sequence, number } = await allocateNumber(workspaceId, settings.numberPrefix);
     try {
       return await prisma.quote.create({
         data: {
           projectId,
+          workspaceId,
           userId,
           sequence,
           number,
@@ -347,6 +373,14 @@ export async function deleteQuote(quoteId: string, userId: string): Promise<void
     );
   }
   await prisma.quote.delete({ where: { id: quoteId } });
+
+  await recordAudit({
+    userId,
+    projectId: quote.projectId,
+    action: 'quote.deleted',
+    summary: `Deleted draft quote ${quote.number}.`,
+    detail: { number: quote.number },
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -418,7 +452,7 @@ export async function buildQuoteDocument(
   // that was sent; a draft renders from live settings so edits are visible.
   const issuer =
     (quote.status === 'issued' ? readIssuerSnapshot(quote.issuerSnapshot) : null) ??
-    snapshotIssuer(await getQuoteSettings(userId));
+    snapshotIssuer(await getQuoteSettings(await quoteWorkspace(quote)));
 
   const mockupKey = quote.mockupId
     ? (
@@ -509,9 +543,20 @@ export async function issueQuote(quoteId: string, userId: string): Promise<Quote
     throw badRequest(`Quote ${quote.number} has already been issued.`);
   }
 
-  const settings = await getQuoteSettings(userId);
+  const settings = await getQuoteSettings(await quoteWorkspace(quote));
   const blockers = issueBlockers(quote, settings);
   if (blockers.length > 0) throw badRequest(blockers.join(' '));
+
+  // A quote's price rests on every material line being current. Issuing one
+  // from superseded figures would send a client a number the system already
+  // knows is not the project's — the exact failure the validation layer exists
+  // to stop (T16).
+  const integrity = await blockersFor('quote', quote.projectId, userId);
+  if (integrity.length > 0) {
+    throw badRequest(
+      `This quote would be priced from figures that are no longer current. ${describeBlockers(integrity)}`
+    );
+  }
 
   const issuedAt = new Date();
   const validUntil = new Date(issuedAt);
@@ -587,6 +632,20 @@ export async function issueQuote(quoteId: string, userId: string): Promise<Quote
       data: { status: 'quoted' },
     }),
   ]);
+
+  await recordAudit({
+    userId,
+    projectId: quote.projectId,
+    action: 'quote.issued',
+    summary: `Issued quote ${issued.number} to ${issued.clientName} for ${issued.totalCents / 100} ${issued.currency}.`,
+    detail: {
+      quoteId: issued.id,
+      number: issued.number,
+      totalCents: issued.totalCents,
+      currency: issued.currency,
+      projectVersionId,
+    },
+  });
 
   return issued;
 }

@@ -8,6 +8,7 @@ import { getObjectBytes, putObject } from '@/lib/storage/r2';
 import type { Mockup } from '@/generated/prisma/client';
 import { inngest } from '@/lib/inngest/client';
 import { buildMockupPrompt } from './prompt';
+import { getDomain } from '@/lib/domains/registry';
 import { createReplicateProvider, isMockupConfigured } from './provider';
 
 export type MockupKind = 'concept' | 'site';
@@ -36,7 +37,7 @@ export async function requestMockup(
   userId: string,
   input: { kind: MockupKind; sourceFileId?: string | null }
 ): Promise<Mockup> {
-  await assertProjectAccess(projectId, userId);
+  const project = await assertProjectAccess(projectId, userId);
   if (!isMockupConfigured()) throw generationUnavailable();
   if (!isStorageConfigured()) {
     throw new ApiError(
@@ -68,7 +69,7 @@ export async function requestMockup(
     }
   }
 
-  const { prompt, source } = buildMockupPrompt(specView.spec, input.kind);
+  const { prompt, source } = buildMockupPrompt(specView.spec, input.kind, getDomain(project.domain));
 
   const mockup = await prisma.mockup.create({
     data: {
@@ -124,7 +125,7 @@ export async function runMockup(mockupId: string): Promise<void> {
 
   const project = await prisma.project.findUnique({
     where: { id: mockup.projectId },
-    select: { userId: true },
+    select: { userId: true, domain: true },
   });
   if (!project) return;
 
@@ -144,7 +145,11 @@ export async function runMockup(mockupId: string): Promise<void> {
 
     const { parseSpecData } = await import('@/lib/spec/schema');
     const spec = parseSpecData(specRow?.data);
-    const { widthPx, heightPx } = buildMockupPrompt(spec, mockup.kind as MockupKind);
+    const { widthPx, heightPx } = buildMockupPrompt(
+      spec,
+      mockup.kind as MockupKind,
+      getDomain(project.domain)
+    );
 
     let generated;
     if (mockup.kind === 'site') {

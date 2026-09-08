@@ -7,10 +7,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { createProject } from '@/lib/projects/service';
 import { listMessages, runConversationTurn } from './conversation-service';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 const originalKey = process.env.OPENAI_API_KEY;
 
 beforeAll(async () => {
@@ -20,6 +23,8 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterEach(() => {
@@ -29,18 +34,19 @@ afterEach(() => {
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 describe('conversation access control', () => {
   it("refuses to read another user's conversation", async () => {
-    const project = await createProject(ownerId, { title: 'Private chat' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Private chat' });
     await expect(listMessages(project.id, otherId)).rejects.toMatchObject({ status: 404 });
   });
 
   it("refuses to post into another user's conversation", async () => {
-    const project = await createProject(ownerId, { title: 'Private chat 2' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Private chat 2' });
     await expect(runConversationTurn(project.id, otherId, 'salam')).rejects.toMatchObject({
       status: 404,
     });
@@ -50,7 +56,7 @@ describe('conversation access control', () => {
   });
 
   it('returns an empty history for a new project rather than failing', async () => {
-    const project = await createProject(ownerId, { title: 'Fresh' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Fresh' });
     expect(await listMessages(project.id, ownerId)).toEqual([]);
   });
 });
@@ -58,7 +64,7 @@ describe('conversation access control', () => {
 describe('when the AI is not configured', () => {
   it('reports 503 and persists nothing', async () => {
     delete process.env.OPENAI_API_KEY;
-    const project = await createProject(ownerId, { title: 'No key' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No key' });
 
     await expect(runConversationTurn(project.id, ownerId, 'bghit enseigne')).rejects.toMatchObject({
       status: 503,

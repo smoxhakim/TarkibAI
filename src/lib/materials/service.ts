@@ -1,26 +1,47 @@
 import { prisma } from '@/lib/db';
+import type { WorkspaceId } from '@/lib/workspaces/access';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import type { Material } from '@/generated/prisma/client';
 import type { CreateMaterialInput, MaterialQuery, UpdateMaterialInput } from './schema';
+import { recordAudit } from '@/lib/audit/service';
+import { assertWorkspacePermission, getMembership } from '@/lib/workspaces/access';
 
 /**
  * A user's material library is private business data: their suppliers and their
  * purchase prices. Every function here is scoped by userId, and that userId
  * always comes from the server-side session (PRD §22).
  */
+/**
+ * A material the caller may see, or 404.
+ *
+ * Resolves the material's workspace and requires membership, the same rule the
+ * project gate uses. Before T18 this compared `material.userId`; that column
+ * now records who added it and is never consulted for access.
+ */
 export async function assertMaterialAccess(materialId: string, userId: string): Promise<Material> {
   const material = await prisma.material.findUnique({ where: { id: materialId } });
   // 404 rather than 403, for the same reason as projects: a 403 would confirm
-  // that another user's material exists.
-  if (!material || material.userId !== userId) throw notFound('Material');
+  // that another business's material exists.
+  if (!material) throw notFound('Material');
+  if (!(await getMembership(material.workspaceId, userId))) throw notFound('Material');
   return material;
 }
 
-export async function listMaterials(userId: string, query: MaterialQuery): Promise<Material[]> {
+/** A material the caller may CHANGE. Managing the library is a permission. */
+async function assertMaterialManagement(materialId: string, userId: string): Promise<Material> {
+  const material = await assertMaterialAccess(materialId, userId);
+  await assertWorkspacePermission(material.workspaceId, userId, 'material.manage');
+  return material;
+}
+
+export async function listMaterials(
+  workspaceId: WorkspaceId,
+  query: MaterialQuery
+): Promise<Material[]> {
   return prisma.material.findMany({
     where: {
-      userId,
+      workspaceId,
       ...(query.includeArchived ? {} : { archivedAt: null }),
       ...(query.category ? { category: query.category } : {}),
       ...(query.measurementModel ? { measurementModel: query.measurementModel } : {}),
@@ -39,9 +60,9 @@ export async function listMaterials(userId: string, query: MaterialQuery): Promi
 }
 
 /** Distinct categories actually in use, for the filter control. */
-export async function listCategories(userId: string): Promise<string[]> {
+export async function listCategories(workspaceId: WorkspaceId): Promise<string[]> {
   const rows = await prisma.material.findMany({
-    where: { userId, archivedAt: null },
+    where: { workspaceId, archivedAt: null },
     select: { category: true },
     distinct: ['category'],
     orderBy: { category: 'asc' },
@@ -54,11 +75,13 @@ export async function getMaterial(materialId: string, userId: string): Promise<M
 }
 
 export async function createMaterial(
+  workspaceId: WorkspaceId,
   userId: string,
   input: CreateMaterialInput
 ): Promise<Material> {
   return prisma.material.create({
     data: {
+      workspaceId,
       userId,
       name: input.name,
       category: input.category,
@@ -87,7 +110,7 @@ export async function updateMaterial(
   userId: string,
   input: UpdateMaterialInput
 ): Promise<Material> {
-  await assertMaterialAccess(materialId, userId);
+  await assertMaterialManagement(materialId, userId);
 
   return prisma.material.update({
     where: { id: materialId },
@@ -115,11 +138,24 @@ export async function setMaterialArchived(
   userId: string,
   archived: boolean
 ): Promise<Material> {
-  await assertMaterialAccess(materialId, userId);
-  return prisma.material.update({
-    where: { id: materialId },
+  const material = await assertMaterialManagement(materialId, userId);
+  const updated = await prisma.material.update({
+    where: { id: material.id },
     data: { archivedAt: archived ? new Date() : null },
   });
+
+  if (archived) {
+    // Only the archive is recorded. Restoring is a correction, and a trail that
+    // logs both halves of every toggle is one nobody reads.
+    await recordAudit({
+      userId,
+      action: 'material.archived',
+      summary: `Archived the material "${updated.name}". Projects still using it will say so.`,
+      detail: { materialId },
+    });
+  }
+
+  return updated;
 }
 
 /**
@@ -131,7 +167,7 @@ export async function setMaterialArchived(
  * every past reference intact.
  */
 export async function deleteMaterial(materialId: string, userId: string): Promise<void> {
-  await assertMaterialAccess(materialId, userId);
+  const material = await assertMaterialManagement(materialId, userId);
 
   const usageCount = await prisma.projectMaterial.count({ where: { materialId } });
   if (usageCount > 0) {
@@ -143,6 +179,13 @@ export async function deleteMaterial(materialId: string, userId: string): Promis
   }
 
   await prisma.material.delete({ where: { id: materialId } });
+
+  await recordAudit({
+    userId,
+    action: 'material.deleted',
+    summary: `Deleted the material "${material.name}".`,
+    detail: { materialId },
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -190,16 +233,73 @@ export type ProjectMaterialView = {
   staleReasons: StaleReason[];
 };
 
+/** The material fields a calculation actually depends on. */
+type CalculationInputFields = {
+  measurementModel: string;
+  standardLengthMm: number | null;
+  sheetWidthMm: number | null;
+  sheetHeightMm: number | null;
+  unitPriceCents: number;
+};
+
 /** Reads the snapshotted explanation defensively — it is untyped JSON. */
 function readCalculationInputs(value: unknown): {
   steps: CalculationStep[];
   warnings: CalculationWarning[];
+  /** Null when the snapshot predates these fields or cannot be read. */
+  fields: CalculationInputFields | null;
 } {
-  if (typeof value !== 'object' || value === null) return { steps: [], warnings: [] };
+  if (typeof value !== 'object' || value === null) return { steps: [], warnings: [], fields: null };
   const record = value as Record<string, unknown>;
   const steps = Array.isArray(record.steps) ? (record.steps as CalculationStep[]) : [];
   const warnings = Array.isArray(record.warnings) ? (record.warnings as CalculationWarning[]) : [];
-  return { steps, warnings };
+
+  const number = (key: string): number | null =>
+    typeof record[key] === 'number' ? (record[key] as number) : null;
+
+  const fields =
+    typeof record.measurementModel === 'string' && typeof record.unitPriceCents === 'number'
+      ? {
+          measurementModel: record.measurementModel,
+          standardLengthMm: number('standardLengthMm'),
+          sheetWidthMm: number('sheetWidthMm'),
+          sheetHeightMm: number('sheetHeightMm'),
+          unitPriceCents: record.unitPriceCents,
+        }
+      : null;
+
+  return { steps, warnings, fields };
+}
+
+/**
+ * Whether the material has changed in a way that changes the numbers.
+ *
+ * Compares the snapshot taken at calculation time against the material now,
+ * field by field. The earlier test — `material.updatedAt > calculatedAt` — was
+ * a proxy, and it marked a line stale for edits that cannot affect a figure:
+ * renaming a material, changing its supplier or category, or archiving it. T16
+ * turned staleness into a blocker that refuses to issue a quote, at which point
+ * a false positive stops real work.
+ *
+ * Without a readable snapshot it falls back to the timestamp, which over-reports
+ * rather than under-reports. A line wrongly called stale costs a recalculation;
+ * a stale line called current reaches a client.
+ */
+function materialInputsChanged(
+  snapshot: CalculationInputFields | null,
+  material: Material,
+  calculatedAt: Date,
+  updatedAt: Date
+): boolean {
+  if (snapshot === null) return updatedAt > calculatedAt;
+
+  return (
+    snapshot.measurementModel !== material.measurementModel ||
+    snapshot.standardLengthMm !== material.standardLengthMm ||
+    snapshot.sheetWidthMm !== material.sheetWidthMm ||
+    snapshot.sheetHeightMm !== material.sheetHeightMm ||
+    snapshot.unitPriceCents !== material.unitPriceCents
+  );
 }
 
 export async function listProjectMaterials(
@@ -221,7 +321,7 @@ export async function listProjectMaterials(
   ]);
 
   return rows.map((row) => {
-    const { steps, warnings } = readCalculationInputs(row.calculationInputs);
+    const { steps, warnings, fields } = readCalculationInputs(row.calculationInputs);
 
     const staleReasons: StaleReason[] = [];
     if (row.calculatedAt) {
@@ -229,8 +329,9 @@ export async function listProjectMaterials(
       if (approvedSpec && row.specVersionAtCalculation !== null && approvedSpec.version > row.specVersionAtCalculation) {
         staleReasons.push('spec_changed');
       }
-      // An edited material may have a different price or stock size.
-      if (row.material.updatedAt > row.calculatedAt) {
+      // Only an edit that changes a figure counts. Archiving, renaming or
+      // changing a supplier bumps updatedAt without touching the arithmetic.
+      if (materialInputsChanged(fields, row.material, row.calculatedAt, row.material.updatedAt)) {
         staleReasons.push('material_changed');
       }
       // The requirement was edited after the numbers were produced. This uses

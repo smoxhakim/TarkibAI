@@ -3,6 +3,7 @@ import { requireDbUser } from '@/lib/auth/current-user';
 import { handleRoute, readJson } from '@/lib/http/api';
 import { createProjectSchema } from '@/lib/projects/schema';
 import { createProject, listProjects } from '@/lib/projects/service';
+import { assertWorkspacePermission, resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 // GET /api/projects — list the signed-in user's projects.
 // ?includeArchived=true also returns archived projects.
@@ -10,7 +11,8 @@ export async function GET(req: NextRequest) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const includeArchived = req.nextUrl.searchParams.get('includeArchived') === 'true';
-    const projects = await listProjects(user.id, { includeArchived });
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    const projects = await listProjects(workspaceId, { includeArchived });
     return { projects };
   });
 }
@@ -20,7 +22,9 @@ export async function POST(req: NextRequest) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const input = createProjectSchema.parse(await readJson(req));
-    const project = await createProject(user.id, input);
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    await assertWorkspacePermission(workspaceId, user.id, 'project.create');
+    const project = await createProject(workspaceId, user.id, input);
     return { project };
   });
 }

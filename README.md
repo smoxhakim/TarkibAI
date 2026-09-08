@@ -307,6 +307,11 @@ src/
                           # settings and issuing
     production/           # workshop package: spec readers, assembly, template
     versions/             # project snapshots, deterministic diff, restore
+    workspaces/           # membership, roles, permissions, invitations
+    collaboration/        # client share links, the project thread, notifications
+    domains/              # trade profiles: required fields, palette, bounds, prompt
+    validation/           # integrity checks, document gates, content sniffing
+    audit/                # append-only record of consequential actions
     pdf/                  # shared document layer: image inlining, formatting,
                           # and PDF text/layout inspection used by the tests
     geometry/, mockup/    # (planned)
@@ -623,7 +628,75 @@ came from the specification you are moving away from — they go stale instead.
 Issued quotes and generated packages keep pointing at the state they were built
 from, which is the promise the whole system rests on.
 
-**Next: T16 — Validation and Safety Layer (Phase 16)**
+T16 adds: one place that asks every integrity question at once — stale figures,
+uncalculable materials, pieces that are not being cut, dimensions that look like
+a slipped decimal — and safeguards built on it. A quote is now refused while its
+price would come from superseded figures; a package is refused while it would
+carry figures that are wrong, though not merely absent, because a package may
+still be built from a drawing alone with its gaps printed on it.
+
+Severity is a promise: a blocker stops a document, a warning proceeds after
+telling you, a note is worth knowing. Plausibility is never a blocker — the tool
+does not decide what you are allowed to build.
+
+Also: an append-only audit trail of approvals, issues, generations, restores and
+removals, which survives the project it describes being deleted; and byte-level
+content sniffing at upload confirmation, deferred from T2.
+
+T17 adds: the domain framework. A project belongs to a trade, and the trade
+decides which specification fields must be answered before approval, what
+vocabulary the assistant uses, which canvas objects are offered, and what counts
+as an implausible dimension.
+
+It does not decide anything about calculation. Material requirements, purchase
+counts, cutting, waste, cost and tax are the same arithmetic in every trade, and
+keeping them out of the profile is what stops a trade acquiring its own quietly
+different numbers.
+
+Two domains ship: **signage & shopfronts**, which behaves exactly as it did
+before — every value in the profile was hard-coded somewhere, and tests assert
+so — and **joinery & furniture**, which is real rather than a placeholder,
+because every engine below the specification already supported it unchanged. It
+proves the seam by differing where the trades differ: no lighting requirement,
+smaller plausible sizes, no lettering on its canvas.
+
+T18 adds: workspaces. A business owns its projects, its material library, its
+costing rules and its company block; people are members with roles. Every
+existing user got a personal workspace holding exactly what they already owned,
+and a single-person business behaves as it did before.
+
+Access is decided at one gate. `assertProjectAccess` resolves a project to its
+workspace and requires a membership row — the same function eighty-odd services
+already called, so they all inherited the new rule at once.
+
+Six roles, with permissions written out per role rather than derived from a
+hierarchy: sales sees costs and cannot touch the canvas, production manages the
+material library and cannot see costs, a worker reads the job and its production
+package and nothing else. Cost visibility is enforced by refusing the read, not
+by filtering the response.
+
+Invitations are by email, with no email sent — the product has no mail provider
+yet, so the link is handed to the inviter to pass on, and the interface says so.
+Accepting requires the signed-in account to be the one invited.
+
+T19 adds: client sharing and the project conversation. A revocable, optionally
+expiring link gives a client a read-only page showing the project, the issued
+quote, the visuals and the conversation — and nothing else. They can approve,
+ask for changes, or just reply, and the team is notified in the app.
+
+The share is the only unauthenticated surface in the product, so it is built
+assuming the link has been forwarded to somebody the sender never intended: the
+payload is client-safe by construction, carries no internal figure and no
+internal id, shows members as the business rather than by name, and reports
+unknown, revoked and expired links identically so a token cannot be probed.
+
+The client page deliberately carries none of TARKIB's own chrome — it is the
+business's document, and their client is not our user.
+
+No email is sent for shares or invitations. There is no mail provider yet, so
+the link is handed back to the sender and the interface says so plainly.
+
+**Next: T20 — Commercial and Operational Features (Phase 20)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.

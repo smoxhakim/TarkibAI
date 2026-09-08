@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { strings } from '@/lib/strings';
-import { OBJECT_TYPES, OBJECT_TYPE_LABELS, type ObjectType, type SceneObject } from '@/lib/canvas/schema';
+import { OBJECT_TYPE_LABELS, type ObjectType, type SceneObject } from '@/lib/canvas/schema';
 import { formatMm, renderScene } from '@/lib/canvas/render';
 
 export type CanvasView = {
@@ -30,8 +30,8 @@ type Draft = {
   notes: string;
 };
 
-const emptyDraft = (): Draft => ({
-  type: 'panel',
+const emptyDraft = (type: ObjectType = 'panel'): Draft => ({
+  type,
   label: '',
   x: '0',
   y: '0',
@@ -65,15 +65,19 @@ export function CanvasPanel({
   projectId,
   view,
   materials,
+  objectTypes,
 }: {
   projectId: string;
   view: CanvasView;
   materials: MaterialOption[];
+  /** The trade's palette. The scene can still hold types outside it — an
+   *  existing object is never made unopenable by narrowing what is offered. */
+  objectTypes: readonly ObjectType[];
 }) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(objectTypes[0]));
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +137,7 @@ export function CanvasPanel({
     if (ok) {
       setAdding(false);
       setEditingId(null);
-      setDraft(emptyDraft());
+      setDraft(emptyDraft(objectTypes[0]));
     }
   }
 
@@ -195,7 +199,7 @@ export function CanvasPanel({
             type="button"
             onClick={() => {
               setAdding(true);
-              setDraft(emptyDraft());
+              setDraft(emptyDraft(objectTypes[0]));
             }}
             className="rounded-md border border-line px-3 py-2 text-sm transition-colors hover:border-accent"
           >
@@ -224,7 +228,7 @@ export function CanvasPanel({
                 disabled={pending}
                 className={inputClass}
               >
-                {OBJECT_TYPES.map((type) => (
+                {objectTypes.map((type) => (
                   <option key={type} value={type}>
                     {OBJECT_TYPE_LABELS[type]}
                   </option>

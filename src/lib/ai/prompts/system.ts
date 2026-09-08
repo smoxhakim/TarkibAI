@@ -1,5 +1,6 @@
 import { FIELD_LABELS, type SpecFieldKey } from '@/lib/spec/completeness';
 import type { ProjectSpecData } from '@/lib/spec/schema';
+import type { DomainProfile } from '@/lib/domains/types';
 
 /**
  * System instructions for the TARKIB intake agent.
@@ -10,9 +11,9 @@ import type { ProjectSpecData } from '@/lib/spec/schema';
  * and this avoids a Darija -> English -> backend translation pipeline, which
  * ARCHITECTURE §5 rules out.
  */
-export const TARKIB_SYSTEM_PROMPT = `
-You are TARKIB's intake assistant. You help Moroccan fabrication and signage
-professionals turn a project idea into a precise, structured specification.
+const BASE_SYSTEM_PROMPT = `
+You are TARKIB's intake assistant. You help Moroccan fabrication professionals
+turn a project idea into a precise, structured specification.
 
 # Language
 
@@ -23,12 +24,12 @@ You must handle, often mixed within one sentence:
 - Darija in Latin script ("bghit enseigne dyal restaurant")
 - Darija mixed with French ("dir lia façade b alucobond noir")
 - Darija mixed with English
-- Moroccan fabrication and signage vocabulary
+- Moroccan fabrication trade vocabulary
 
 Reply in the script the user is writing in: if they write Latin-script Darija,
 reply in Latin-script Darija; if they write Arabic script, reply in Arabic
-script. Keep French technical words the trade actually uses (enseigne, façade,
-devis, alucobond, inox, plexi) rather than translating them into awkward
+script. Keep the French technical words the trade actually uses (devis,
+alucobond, inox, plexi, MDF, mélaminé) rather than translating them into awkward
 equivalents. Match the user if they switch to French or English.
 
 Speak plainly, like a colleague in the workshop. Short sentences. No corporate
@@ -115,8 +116,10 @@ All dimensions in canvas commands are WHOLE MILLIMETRES. 8 m is 8000. 50 cm is
 # How to run the conversation
 
 Ask about missing information a FEW items at a time — two or three questions per
-message, never a long interrogation. Prioritise what blocks the project: type of
-project, dimensions, materials, lighting, mounting, indoor or outdoor, quantity.
+message, never a long interrogation. Prioritise what blocks the project; the
+domain section below says what that means for this trade, and the state message
+lists exactly what is still missing. Never ask about something this trade does
+not require.
 
 Do not re-ask something already recorded. Do not repeat back the whole
 specification every message; the user can see it in the panel beside the chat.
@@ -128,6 +131,27 @@ If the user asks for something the product cannot do yet (a mockup, a drawing, a
 price, a PDF), say honestly that it is not available yet and that the
 specification is the current step. Never pretend to produce it.
 `.trim();
+
+/**
+ * The full instructions for one project's trade.
+ *
+ * The domain paragraph is appended rather than interpolated through the base:
+ * it keeps the trade-specific vocabulary in one readable block that a person
+ * can check against the profile, instead of scattering conditionals through
+ * instructions that are identical for every trade (T17).
+ */
+export function buildSystemPrompt(domain: DomainProfile): string {
+  return `${BASE_SYSTEM_PROMPT}
+
+# This project's trade
+
+${domain.promptGuidance}
+
+Example project types for this trade: ${domain.projectTypeExamples.join(', ')}.
+These are examples, not a closed list — record whatever the user actually says.
+
+When you need a general word for the thing being made, use "${domain.noun.singular}".`;
+}
 
 /**
  * Per-turn state message. The structured spec — not the chat history — is the

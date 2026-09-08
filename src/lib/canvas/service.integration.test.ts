@@ -11,10 +11,13 @@ import { createProject } from '@/lib/projects/service';
 import { approveSpec, updateDraftSpec } from '@/lib/spec/service';
 import { applyCommands, getScene, seedScene } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `canvas-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -33,16 +36,19 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 async function approvedProject(patch: ProjectSpecPatch = COMPLETE_SPEC) {
-  const project = await createProject(ownerId, { title: `canvas ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `canvas ${Math.random()}` });
   await updateDraftSpec(project.id, ownerId, patch);
   await approveSpec(project.id, ownerId);
   return project;
@@ -63,7 +69,7 @@ describe('ownership', () => {
 
 describe('seeding', () => {
   it('refuses to seed before a specification is approved', async () => {
-    const project = await createProject(ownerId, { title: 'Unapproved canvas' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Unapproved canvas' });
     await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
 
     await expect(seedScene(project.id, ownerId)).rejects.toMatchObject({ status: 400 });
@@ -94,7 +100,7 @@ describe('seeding', () => {
   });
 
   it('reports why seeding is blocked instead of returning an empty scene silently', async () => {
-    const project = await createProject(ownerId, { title: 'No spec' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No spec' });
     const view = await getScene(project.id, ownerId);
     expect(view.scene.objects).toEqual([]);
     expect(view.seedBlockedReason).toContain('Approve the project specification');

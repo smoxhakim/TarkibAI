@@ -6,9 +6,12 @@ import {
   createSignedDownloadUrl,
   createSignedUploadUrl,
   deleteObject,
+  getObjectPrefix,
   headObject,
 } from '@/lib/storage/r2';
 import { isStorageConfigured } from '@/lib/storage/config';
+import { SNIFF_BYTES, verifyDeclaredType } from '@/lib/validation/content-type';
+import { recordAudit } from '@/lib/audit/service';
 import type { File as FileRow } from '@/generated/prisma/client';
 import { MAX_UPLOAD_BYTES, type CreateUploadInput } from './schema';
 
@@ -122,11 +125,57 @@ export async function confirmUpload(
     throw badRequest(`Files must be ${MAX_UPLOAD_BYTES / 1024 / 1024}MB or smaller.`);
   }
 
+  // What the browser declared is bound into the upload signature (T2); this is
+  // the first check of what actually arrived. The vision model is handed image
+  // bytes directly, so a file that is not the type it claims does not become a
+  // rendering problem later — it is refused here.
+  await rejectMismatchedContent(row, userId);
+
   const updated = await prisma.file.update({
     where: { id: row.id },
     data: { status: 'ready', sizeBytes: head.sizeBytes },
   });
   return toView(updated);
+}
+
+/**
+ * Refuses a file whose bytes contradict its declared type.
+ *
+ * A failure to read the prefix is NOT treated as a rejection. Storage being
+ * briefly unreachable is not evidence that a file is lying, and deleting
+ * someone's upload on that basis would be worse than the risk it guards
+ * against. The file is accepted and the failure logged.
+ */
+async function rejectMismatchedContent(row: FileRow, userId: string): Promise<void> {
+  let prefix: Buffer;
+  try {
+    prefix = await getObjectPrefix(row.objectKey, SNIFF_BYTES);
+  } catch (error) {
+    console.error('[files] could not read the uploaded bytes to verify them', row.id, error);
+    return;
+  }
+
+  const verdict = verifyDeclaredType(prefix, row.mimeType);
+  if (verdict.ok) return;
+
+  await deleteObject(row.objectKey).catch((error) =>
+    console.error('[files] could not remove a rejected upload', row.objectKey, error)
+  );
+  await prisma.file.delete({ where: { id: row.id } });
+
+  await recordAudit({
+    userId,
+    projectId: row.projectId,
+    action: 'file.rejected',
+    summary: `Rejected the upload "${row.originalName}": ${verdict.reason}`,
+    detail: {
+      declaredMimeType: row.mimeType,
+      detectedMimeType: verdict.detectedMimeType,
+      originalName: row.originalName,
+    },
+  });
+
+  throw badRequest(`${verdict.reason} The upload was not kept.`);
 }
 
 /** A short-lived signed URL. Never persisted, never reused. */

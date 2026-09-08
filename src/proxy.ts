@@ -5,7 +5,14 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 // Public pages. Everything else is protected by default, so a route added in a
 // later phase is private unless it is deliberately listed here.
-const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)']);
+//
+// `/share/*` is a client review page. A client has no account — requiring one
+// would defeat the point of a link you send to somebody — so the token in the
+// URL is the whole credential. What that costs is paid for elsewhere: the
+// payload behind it is built client-safe by construction (see
+// src/lib/collaboration/share-view.ts), the token is 32 random bytes, and the
+// link can be given an expiry and withdrawn at any time.
+const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)', '/share/(.*)']);
 
 // API routes authenticate themselves via requireDbUser(), which throws a 401
 // that handleRoute() serialises as JSON. Redirecting them to Clerk's HTML

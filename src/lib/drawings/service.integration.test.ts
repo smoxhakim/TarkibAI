@@ -12,10 +12,13 @@ import { approveSpec, updateDraftSpec } from '@/lib/spec/service';
 import { applyCommands, seedScene } from '@/lib/canvas/service';
 import { issueDrawing, listIssuedDrawings, renderLiveDrawing } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `dw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -34,16 +37,19 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 async function projectWithCanvas() {
-  const project = await createProject(ownerId, { title: `drawing ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `drawing ${Math.random()}` });
   await updateDraftSpec(project.id, ownerId, SPEC);
   await approveSpec(project.id, ownerId);
   const scene = await seedScene(project.id, ownerId);
@@ -52,7 +58,7 @@ async function projectWithCanvas() {
 
 describe('live drawing', () => {
   it('reports an empty canvas rather than drawing nothing silently', async () => {
-    const project = await createProject(ownerId, { title: 'No canvas' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No canvas' });
     const live = await renderLiveDrawing(project.id, ownerId);
     expect(live.sceneEmpty).toBe(true);
     expect(live.views.every((view) => !view.available)).toBe(true);
@@ -103,7 +109,7 @@ describe('live drawing', () => {
 
 describe('issuing a drawing', () => {
   it('refuses to issue from an empty canvas', async () => {
-    const project = await createProject(ownerId, { title: 'Empty issue' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Empty issue' });
     await expect(issueDrawing(project.id, ownerId)).rejects.toMatchObject({ status: 400 });
   });
 

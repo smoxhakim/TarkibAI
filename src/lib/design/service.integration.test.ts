@@ -12,10 +12,13 @@ import { getScene, seedScene } from '@/lib/canvas/service';
 import { buildToolbox } from '@/lib/ai/tools';
 import { approveProposal, createProposal, listProposals, rejectProposal } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `design-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -34,17 +37,20 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 /** A project with an approved spec and a seeded canvas. */
 async function readyProject() {
-  const project = await createProject(ownerId, { title: `design ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `design ${Math.random()}` });
   await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
   await approveSpec(project.id, ownerId);
   const scene = await seedScene(project.id, ownerId);

@@ -1,8 +1,15 @@
 import { prisma } from '@/lib/db';
 import { badRequest } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { applySceneCommands, seedSceneFromSpec } from './commands';
-import { emptyScene, parseScene, type CanvasSceneData, type SceneCommand } from './schema';
+import {
+  OBJECT_TYPE_LABELS,
+  emptyScene,
+  parseScene,
+  type CanvasSceneData,
+  type SceneCommand,
+} from './schema';
+import { getDomain } from '@/lib/domains/registry';
 
 export type SceneView = {
   scene: CanvasSceneData;
@@ -91,7 +98,22 @@ export async function applyCommands(
   userId: string,
   commands: SceneCommand[]
 ): Promise<SceneView> {
-  await assertProjectAccess(projectId, userId);
+  const { project } = await assertProjectPermission(projectId, userId, 'design.edit');
+  const domain = getDomain(project.domain);
+
+  // Narrowing applies to what is ADDED, never to what is stored. A scene that
+  // already contains an object type this domain does not offer stays readable
+  // and editable — otherwise changing a project's trade would make its own
+  // design impossible to open (T17).
+  for (const command of commands) {
+    if (command.kind !== 'add_object') continue;
+    if (!domain.canvasObjectTypes.includes(command.object.type)) {
+      throw badRequest(
+        `A ${OBJECT_TYPE_LABELS[command.object.type].toLowerCase()} is not part of ${domain.label.toLowerCase()}. ` +
+          `This project can use: ${domain.canvasObjectTypes.map((type) => OBJECT_TYPE_LABELS[type].toLowerCase()).join(', ')}.`
+      );
+    }
+  }
 
   const row = await prisma.canvasScene.findUnique({ where: { projectId } });
   const current = row ? parseScene(row.data) : emptyScene();

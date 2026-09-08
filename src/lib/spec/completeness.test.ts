@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REQUIRED_FIELDS, isSpecComplete, missingFields } from './completeness';
+import { ALL_SPEC_FIELDS, isSpecComplete, missingFields } from './completeness';
 import { SPEC_VERSION, emptySpec, type ProjectSpecData } from './schema';
 
 const completeSpec: ProjectSpecData = {
@@ -15,7 +15,7 @@ const completeSpec: ProjectSpecData = {
 
 describe('missingFields', () => {
   it('reports every required field for an empty spec', () => {
-    expect(missingFields(emptySpec()).sort()).toEqual([...REQUIRED_FIELDS].sort());
+    expect(missingFields(emptySpec()).sort()).toEqual([...ALL_SPEC_FIELDS].sort());
   });
 
   it('reports nothing for a complete spec', () => {

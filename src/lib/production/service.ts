@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { getSpec } from '@/lib/spec/service';
 import { listProjectMaterials } from '@/lib/materials/service';
 import { formatStockSize, formatThickness, unitLabelFor } from '@/lib/materials/format';
@@ -8,6 +8,8 @@ import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { buildObjectKey } from '@/lib/storage/keys';
 import { recordVersion } from '@/lib/versions/service';
+import { blockersFor, describeBlockers } from '@/lib/validation/service';
+import { recordAudit } from '@/lib/audit/service';
 import { rasteriseSvg, type EmbeddedImage } from '@/lib/pdf/image';
 import type { Document } from '@/generated/prisma/client';
 import {
@@ -383,10 +385,21 @@ export async function generateProductionDocument(
   userId: string,
   input: { notes?: string | null } = {}
 ): Promise<Document> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'production.generate');
 
   const view = await getProductionView(projectId, userId);
   if (view.blockers.length > 0) throw badRequest(view.blockers.join(' '));
+
+  // Narrower than the quote gate on purpose. A package may be built from a
+  // drawing alone, and absent data is printed as a gap. What is refused here is
+  // data that is present and WRONG: figures superseded by a later change, and
+  // pieces the optimiser could not place that a plan would imply are being cut.
+  const integrity = await blockersFor('production', projectId, userId);
+  if (integrity.length > 0) {
+    throw badRequest(
+      `This package would carry figures that are no longer correct. ${describeBlockers(integrity)}`
+    );
+  }
 
   const last = await prisma.document.findFirst({
     where: { projectId, type: 'production' },
@@ -451,6 +464,20 @@ export async function generateProductionDocument(
       data: { status: 'production_ready' },
     }),
   ]);
+
+  await recordAudit({
+    userId,
+    projectId,
+    action: 'production.generated',
+    summary: `Generated production package ${version}.`,
+    detail: {
+      documentId: created.id,
+      version,
+      drawingVersion: drawing?.version ?? null,
+      gaps: view.gaps,
+      projectVersionId,
+    },
+  });
 
   return created;
 }

@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { ApiError } from '@/lib/http/api';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 import {
   assertProjectAccess,
   createProject,
@@ -24,7 +25,9 @@ const ownerClerkId = `clerk-owner-${suffix}`;
 const otherClerkId = `clerk-other-${suffix}`;
 
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 beforeAll(async () => {
   const owner = await prisma.user.create({
@@ -35,18 +38,21 @@ beforeAll(async () => {
   });
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   // Projects cascade to their dependent rows; users are removed last.
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 describe('ownership isolation', () => {
   it("refuses to load another user's project, and reports 404 rather than 403", async () => {
-    const project = await createProject(ownerId, { title: 'Owner project' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Owner project' });
 
     await expect(assertProjectAccess(project.id, otherId)).rejects.toMatchObject({
       status: 404,
@@ -55,7 +61,7 @@ describe('ownership isolation', () => {
   });
 
   it("refuses to rename or archive another user's project", async () => {
-    const project = await createProject(ownerId, { title: 'Owner project 2' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Owner project 2' });
 
     await expect(updateProject(project.id, otherId, { title: 'hijacked' })).rejects.toMatchObject({
       status: 404,
@@ -70,16 +76,16 @@ describe('ownership isolation', () => {
   });
 
   it("refuses to delete another user's project", async () => {
-    const project = await createProject(ownerId, { title: 'Owner project 3' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Owner project 3' });
 
     await expect(deleteProject(project.id, otherId)).rejects.toMatchObject({ status: 404 });
     expect(await assertProjectAccess(project.id, ownerId)).toBeTruthy();
   });
 
   it('scopes listing to the requesting user', async () => {
-    await createProject(otherId, { title: 'Other user project' });
+    await createProject(otherWs, otherId, { title: 'Other user project' });
 
-    const ownerTitles = (await listProjects(ownerId)).map((p) => p.title);
+    const ownerTitles = (await listProjects(ownerWs)).map((p) => p.title);
     expect(ownerTitles).not.toContain('Other user project');
   });
 
@@ -92,7 +98,7 @@ describe('ownership isolation', () => {
 
 describe('archive lifecycle', () => {
   it('archives, hides from the default listing, and restores with the stage intact', async () => {
-    const project = await createProject(ownerId, { title: 'Archivable' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Archivable' });
     await prisma.project.update({ where: { id: project.id }, data: { status: 'quoted' } });
 
     const archived = await updateProject(project.id, ownerId, { archived: true });
@@ -100,10 +106,10 @@ describe('archive lifecycle', () => {
     // The workflow stage survives archiving — that is why archived is not a status value.
     expect(archived.status).toBe('quoted');
 
-    const defaultList = await listProjects(ownerId);
+    const defaultList = await listProjects(ownerWs);
     expect(defaultList.map((p) => p.id)).not.toContain(project.id);
 
-    const withArchived = await listProjects(ownerId, { includeArchived: true });
+    const withArchived = await listProjects(ownerWs, { includeArchived: true });
     expect(withArchived.map((p) => p.id)).toContain(project.id);
 
     const restored = await updateProject(project.id, ownerId, { archived: false });
@@ -114,7 +120,7 @@ describe('archive lifecycle', () => {
 
 describe('hard delete', () => {
   it('cascades to dependent rows instead of failing on a foreign key', async () => {
-    const project = await createProject(ownerId, { title: 'Deletable' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Deletable' });
 
     // One dependent row from each direction the cascade has to cover.
     await prisma.chatMessage.create({
