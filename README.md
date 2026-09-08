@@ -188,7 +188,7 @@ accumulating advisories.
 
 | Package | Added in |
 | --- | --- |
-| `stripe` | Phase 20 — billing |
+| a payment provider | later — not chosen; Stripe does not serve Moroccan merchants (see ARCHITECTURE) |
 | `resend` | later — email |
 | `@sentry/nextjs` | later — monitoring |
 

@@ -67,7 +67,17 @@ The system should remain pragmatic and understandable for a solo founder while b
 
 ### Billing
 
-- Stripe Billing
+**Not chosen, and deliberately open.** Stripe was named here before anyone
+checked whether it fits: Stripe does not support Moroccan businesses as
+merchants, so a Moroccan fabrication shop cannot be paid through it. The
+realistic options are local — CMI for cards, bank transfer, and cash on
+delivery, which is how much of this trade is actually settled.
+
+Choosing between them needs the business's own banking arrangements, so the
+decision waits until billing is genuinely being built rather than being written
+down now and inherited later. `User.stripeCustomerId` survives as an unused
+column from the original scaffold and should be renamed or dropped when a
+provider is chosen.
 
 ### Email
 

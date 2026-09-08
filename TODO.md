@@ -761,11 +761,14 @@ fabrication this product exists to avoid.
 
 ### Deliberately NOT built
 
-- [ ] **Billing and subscription management.** Needs the user's own Stripe
-      account, and handles real money. Half-built billing is the one item on
-      this list where shipping something incomplete is actively dangerous.
-      `stripe` remains a deferred dependency and `User.subscriptionPlan` remains
-      an unused stub.
+- [ ] **Billing and subscription management.** Deferred indefinitely by the
+      product owner (2026-09-08), and the provider is not Stripe: Stripe does
+      not support Moroccan businesses as merchants, so the scaffold's
+      assumption was wrong. Realistic options are local — CMI for cards, bank
+      transfer, cash on delivery — and choosing needs the business's own
+      banking arrangements. `User.stripeCustomerId` and `subscriptionPlan`
+      remain unused columns from the original scaffold; rename or drop them
+      when a provider is chosen.
 - [ ] **Usage-based limits.** Depends on billing; enforcing limits without a
       plan to enforce them against would just lock people out.
 - [ ] **Inventory integrations.** External systems, none of which the user has
