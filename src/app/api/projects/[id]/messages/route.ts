@@ -6,8 +6,16 @@ import { listMessages, runConversationTurn } from '@/lib/ai/conversation-service
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-// A tool-calling turn against a reasoning model can legitimately take a while.
-export const maxDuration = 120;
+/**
+ * A tool-calling turn against a reasoning model can legitimately take a while.
+ *
+ * 60 is the ceiling on Vercel's Hobby plan, and a value above it fails the
+ * build rather than degrading — so this is the most the deployment allows, not
+ * the most the work wants. A long Darija turn that runs several tool calls can
+ * exceed it and will return a timeout; raise this to 300 on Pro if that starts
+ * happening in practice.
+ */
+export const maxDuration = 60;
 
 const sendMessageSchema = z.object({
   content: z.string().trim().min(1, 'Write a message first.').max(4000),

@@ -472,10 +472,11 @@ the production database once before the first release.
 browser straight to R2, so the production origin must be added or every upload
 fails with an opaque CORS error.
 
-**`maxDuration = 120`** on `/api/projects/[id]/messages` exceeds the Vercel
-Hobby ceiling of 60 seconds and will fail the build there. On Pro it is fine. On
-Hobby, lower it to 60 and accept that a long Darija turn running several tool
-calls may time out.
+**Function duration.** Every route is at or below 60 seconds, which is the
+Vercel Hobby ceiling. The chat route wants longer than that — a tool-calling
+turn against a reasoning model can run past a minute — so on Hobby a long Darija
+turn with several tool calls can time out. Raise it to 300 on Pro if that starts
+happening in practice.
 
 ### After the first deploy
 
