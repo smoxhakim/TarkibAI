@@ -1,7 +1,20 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-// Next 16 replaced the "middleware" file convention with "proxy"; the contract
-// (default export + config.matcher) is unchanged.
+// DO NOT rename this to proxy.ts. Next 16 deprecates "middleware" in favour of
+// "proxy" and prints a warning on every build saying so — but it compiles
+// proxy.ts WITHOUT adding an entry to .next/server/middleware-manifest.json,
+// and that manifest is what Vercel reads to decide whether to run it at all.
+//
+// The effect is silent and total. `next start` locally runs the proxy anyway,
+// so everything passes; on Vercel the middleware never executes, `auth()`
+// throws because it cannot detect clerkMiddleware, and EVERY request returns
+// 500 — pages, API routes, the public share link, all of it. The build is
+// green throughout.
+//
+// Verified by building both ways: proxy.ts gives `middleware: {}` in the
+// manifest, middleware.ts gives `middleware: { '/': ... }`.
+//
+// Accept the deprecation warning. It is the version that runs.
 
 // Public pages. Everything else is protected by default, so a route added in a
 // later phase is private unless it is deliberately listed here.
@@ -28,7 +41,14 @@ const isMachineRoute = createRouteMatcher(['/api/inngest(.*)']);
 
 export default clerkMiddleware(async (auth, request) => {
   if (isMachineRoute(request) || isPublicRoute(request) || isApiRoute(request)) return;
-  await auth.protect();
+
+  // Redirect explicitly rather than calling auth.protect(). protect() decides
+  // for itself between redirecting and answering 404, and under this file
+  // convention it chose 404 — so a signed-out visitor to /dashboard was told
+  // the page does not exist instead of being sent to sign in. Saying which
+  // outcome we want removes the guess.
+  const { userId, redirectToSignIn } = await auth();
+  if (!userId) return redirectToSignIn();
 });
 
 export const config = {
