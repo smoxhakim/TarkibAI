@@ -42,6 +42,8 @@ import { QuotesPanel } from '@/components/QuotesPanel';
 import { getQuoteView, listQuotes } from '@/lib/quotes/service';
 import { ProductionPanel } from '@/components/ProductionPanel';
 import { getProductionView } from '@/lib/production/service';
+import { VersionsPanel } from '@/components/VersionsPanel';
+import { listVersions } from '@/lib/versions/service';
 import { formatStockSize } from '@/lib/materials/format';
 
 export const dynamic = 'force-dynamic';
@@ -105,10 +107,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     renderLiveDrawing(project.id, user.id),
     listIssuedDrawings(project.id, user.id),
   ]);
-  const [mockups, quotes, productionView] = await Promise.all([
+  const [mockups, quotes, productionView, versions] = await Promise.all([
     listMockups(project.id, user.id),
     listQuotes(project.id, user.id),
     getProductionView(project.id, user.id),
+    listVersions(project.id, user.id),
   ]);
 
   // The newest quote is the one being worked on; the rest are history. Only it
@@ -412,6 +415,19 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             notes: entry.notes,
             hasPdf: entry.pdfObjectKey !== null,
             createdAt: entry.createdAt.toISOString(),
+          }))}
+        />
+        <VersionsPanel
+          projectId={project.id}
+          versions={versions.map((version) => ({
+            id: version.id,
+            versionNumber: version.versionNumber,
+            label: version.label,
+            reasonLabel: version.reasonLabel,
+            note: version.note,
+            createdAt: version.createdAt.toISOString(),
+            producedQuoteNumbers: version.producedQuoteNumbers,
+            producedPackageVersions: version.producedPackageVersions,
           }))}
         />
       </div>

@@ -2114,3 +2114,66 @@ request limit; it does not need it yet.
 byte 0x97, which Latin-1 decodes to an unprintable control character. An
 assertion on "led — halo-lit" then failed against a PDF that rendered it
 perfectly, so the extractor now maps the 0x80-0x9F range.
+
+### T15 — Version History (Phase 15)
+
+**Versions are append-only, and that is the whole promise.** T13 and T14 both
+sell traceability: a quote or a package can be traced to the state that produced
+it. That only holds if the state cannot be edited afterwards. Restoring writes a
+new draft and a new version; it never rewrites or removes an earlier one.
+
+**Recorded at authoritative moments, not on every recalculation.** A version is
+written when a specification is approved, a design accepted, a quote issued, a
+package generated, or when the user asks for one. Material and cost
+recalculations deliberately do not write versions: they run often, and a
+timeline flooded with them would bury the moments that matter. Those are already
+auditable at row level — `ProjectMaterial.calculationInputs` and
+`ProjectCost.settingsSnapshot` each snapshot the rules that produced them.
+
+**Snapshots copy, they never recompute.** Spec, canvas, material lines, cost and
+document references are stored as they stood. A version stays reviewable after
+the engine that produced its numbers has changed, which is the point of keeping
+it.
+
+**An absent section is not an empty one.** A project with no canvas snapshots
+`null`; a project whose canvas was emptied snapshots `[]`. The diff reports the
+first as "cannot be compared" and the second as objects removed. Conflating them
+would report a deletion that never happened — and older versions, written before
+canvas snapshots existed, are exactly the case that would trigger it.
+
+**The diff is pure and deterministic.** Same two snapshots in, same diff out, no
+database and no model. A version comparison is a factual statement about what
+changed; a summary written by a language model would be a plausible account of
+one. Output is sorted by path so the same comparison always reads the same way.
+
+**Named arrays are keyed by name, not by index.** Reordering two components in
+the specification would otherwise read as four changes. Arrays of scalars stay
+whole, because "colors: red, white" is one fact to a reader rather than two.
+
+**`computedAt` is excluded from the cost diff.** Re-running a calculation on
+unchanged inputs is not a change to the cost, and reporting the timestamp would
+bury the figures that actually moved.
+
+**Comparing against the present needs no version.** "What has moved since we
+approved this?" is the question users actually have, and requiring a snapshot of
+the current state to answer it would mean taking one on every page load.
+
+**Restoring is deliberately partial, and says so before it runs.** It restores
+the specification and the canvas; it does not restore calculations. Those
+numbers were derived from the specification being moved away from, so writing
+them back would present figures that no longer follow from the project. They go
+stale instead, which the material and cost panels already detect and report. The
+restore preview states all four consequences — new draft, calculations not
+restored, issued documents untouched, nothing deleted — before the user
+confirms.
+
+**Restoring returns the project to intake.** The working specification is
+unapproved again, and a later stage would describe state that no longer holds.
+
+**Version capture never fails the thing that caused it.** Inside `approveSpec`
+it shares the transaction, because an approved specification must not exist
+without its snapshot. For a design approval, an issued quote or a generated
+package the capture is outside the transaction and its failure is logged: the
+design is already applied and the PDF already stored, and losing a history entry
+is not a reason to undo them. The document's `projectVersionId` is simply absent
+in that case rather than pointing at nothing.

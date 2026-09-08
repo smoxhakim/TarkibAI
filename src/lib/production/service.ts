@@ -7,6 +7,7 @@ import { formatStockSize, formatThickness, unitLabelFor } from '@/lib/materials/
 import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { buildObjectKey } from '@/lib/storage/keys';
+import { recordVersion } from '@/lib/versions/service';
 import { rasteriseSvg, type EmbeddedImage } from '@/lib/pdf/image';
 import type { Document } from '@/generated/prisma/client';
 import {
@@ -412,6 +413,17 @@ export async function generateProductionDocument(
     getSpec(projectId, userId),
   ]);
 
+  let projectVersionId: string | null = null;
+  try {
+    const recorded = await recordVersion(projectId, {
+      reason: 'production_generated',
+      label: `Production package ${version} generated`,
+    });
+    projectVersionId = recorded.id;
+  } catch (error) {
+    console.error('[production] could not record a version for the package', error);
+  }
+
   const [created] = await Promise.all([
     prisma.document.create({
       data: {
@@ -420,6 +432,7 @@ export async function generateProductionDocument(
         version,
         notes,
         pdfObjectKey,
+        projectVersionId,
         // Recorded so a sheet on a bench can be traced to the project state
         // behind it, without re-deriving it from timestamps.
         sourceSnapshot: {

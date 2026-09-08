@@ -497,21 +497,38 @@ The production team receives a visual fabrication package containing drawings, m
 
 # Phase 15 — Project Versioning
 
-## T15 — Full Version History
+## T15 — Full Version History ✅ COMPLETE
 
-- [ ] Project snapshots
-- [ ] Specification snapshots
-- [ ] Cost snapshots
-- [ ] Canvas state snapshots
-- [ ] Drawing references
-- [ ] Document/version references
-- [ ] Version timeline
-- [ ] Version comparison
-- [ ] Restore/review flow
+- [x] Project snapshots (whole project, copied as it stood, never recomputed)
+- [x] Specification snapshots
+- [x] Cost snapshots (internal; versions are an internal record)
+- [x] Canvas state snapshots (absent and emptied are distinguishable)
+- [x] Drawing references
+- [x] Document/version references (`Quote.projectVersionId`, `Document.projectVersionId`)
+- [x] Version timeline (`/api/projects/:id/versions`, panel on the project page)
+- [x] Version comparison (pure deterministic diff; any two versions, or one against now)
+- [x] Restore/review flow (preview states every consequence before confirming)
+- [x] Automatic capture at spec approval, design approval, quote issue, package generation
+- [x] Manual capture with a user-written label and note
+- [x] Tests (20 unit, 22 integration)
+
+### Deferred out of T15 (deliberately)
+
+- [ ] Versions on every material or cost recalculation — they run often and
+      would bury the moments that matter. Both are already auditable at row
+      level through their own input snapshots.
+- [ ] Restoring calculations — their numbers were derived from the
+      specification being moved away from, so they go stale instead
+- [ ] Deleting or editing a version — append-only is the property that makes
+      "this document came from this state" true
+- [ ] Branching a project from a version — a version restores in place; a
+      separate project is a different feature
+- [ ] Diffing an issued quote's line items — the quote is frozen on its own
+      model and does not change
 
 ### Definition of done
 
-Users can understand how a project changed and identify which project state generated a particular document.
+Users can understand how a project changed and identify which project state generated a particular document. ✅
 
 ---
 
@@ -704,14 +721,28 @@ Completed:
 - [x] **T12 — AI Mockups** (Phase 12) — pending live provider verification
 - [x] **T13 — Client Quote System** (Phase 13)
 - [x] **T14 — Production PDF** (Phase 14)
+- [x] **T15 — Full Version History** (Phase 15)
 
 Active milestone:
 
-- [ ] None. T15 has not been started.
+- [ ] None. T16 has not been started.
 
 Next milestone:
 
-- [ ] **T15 — Project Versioning** (Phase 15)
+- [ ] **T16 — Validation and Safety Layer** (Phase 16)
+
+### T15 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 375 passed |
+| Integration tests | 210 passed against Neon |
+| Production build | passed, 59 routes |
+| Migrations | 17 applied |
+| Append-only | tested: restoring adds a version and every earlier one survives |
+| Document traceability | tested: an issued quote keeps its version after a restore |
 
 ### T14 verification record
 

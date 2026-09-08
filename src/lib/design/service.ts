@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess } from '@/lib/projects/service';
 import { applyCommands } from '@/lib/canvas/service';
+import { recordVersion } from '@/lib/versions/service';
 import { sceneCommandSchema, type SceneCommand } from '@/lib/canvas/schema';
 import { updateDraftSpec } from '@/lib/spec/service';
 import { projectSpecPatchSchema, type ProjectSpecPatch } from '@/lib/spec/schema';
@@ -181,6 +182,20 @@ export async function approveProposal(
     where: { id: row.id },
     data: { status: 'approved', decidedAt: new Date(), failureReason: null },
   });
+
+  // Recorded after the commands and any spec patch have landed, so the snapshot
+  // is the design as approved rather than the one before it. Outside the
+  // transaction on purpose: the proposal is already applied and recorded, and
+  // failing to write the history entry must not undo an accepted design.
+  try {
+    await recordVersion(projectId, {
+      reason: 'design_approved',
+      label: `Design approved: ${row.summary}`,
+    });
+  } catch (error) {
+    console.error('[design] could not record a version for the approved design', error);
+  }
+
   return toView(updated);
 }
 

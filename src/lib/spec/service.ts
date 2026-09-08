@@ -4,6 +4,7 @@ import { assertProjectAccess } from '@/lib/projects/service';
 import type { ProjectSpec } from '@/generated/prisma/client';
 import { missingFields, type SpecFieldKey } from './completeness';
 import { mergeSpec } from './merge';
+import { recordVersion } from '@/lib/versions/service';
 import { emptySpec, parseSpecData, type ProjectSpecData, type ProjectSpecPatch } from './schema';
 
 export type SpecView = {
@@ -117,24 +118,19 @@ export async function approveSpec(projectId: string, userId: string): Promise<Sp
       data: { status: 'approved', approvedAt: new Date() },
     });
 
-    const lastVersion = await tx.projectVersion.findFirst({
-      where: { projectId },
-      orderBy: { versionNumber: 'desc' },
-    });
-
-    await tx.projectVersion.create({
-      data: {
-        projectId,
-        versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
-        label: `Specification v${row.version} approved`,
-        specSnapshot: row.data as object,
-      },
-    });
-
     await tx.project.update({
       where: { id: projectId },
       data: { status: 'spec_approved' },
     });
+
+    // Written inside the same transaction: an approved specification must never
+    // exist without the snapshot that records the state it was approved in.
+    // The snapshot is taken after the status update so it reflects the approval.
+    await recordVersion(
+      projectId,
+      { reason: 'spec_approved', label: `Specification v${row.version} approved` },
+      tx
+    );
 
     return row;
   });
