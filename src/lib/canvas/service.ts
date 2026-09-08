@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { badRequest } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { applySceneCommands, seedSceneFromSpec } from './commands';
 import {
   OBJECT_TYPE_LABELS,
@@ -98,7 +98,7 @@ export async function applyCommands(
   userId: string,
   commands: SceneCommand[]
 ): Promise<SceneView> {
-  const project = await assertProjectAccess(projectId, userId);
+  const { project } = await assertProjectPermission(projectId, userId, 'design.edit');
   const domain = getDomain(project.domain);
 
   // Narrowing applies to what is ADDED, never to what is stored. A scene that

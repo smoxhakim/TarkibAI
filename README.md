@@ -307,6 +307,7 @@ src/
                           # settings and issuing
     production/           # workshop package: spec readers, assembly, template
     versions/             # project snapshots, deterministic diff, restore
+    workspaces/           # membership, roles, permissions, invitations
     domains/              # trade profiles: required fields, palette, bounds, prompt
     validation/           # integrity checks, document gates, content sniffing
     audit/                # append-only record of consequential actions
@@ -658,7 +659,26 @@ because every engine below the specification already supported it unchanged. It
 proves the seam by differing where the trades differ: no lighting requirement,
 smaller plausible sizes, no lettering on its canvas.
 
-**Next: T18 — Teams and Permissions (Phase 18)**
+T18 adds: workspaces. A business owns its projects, its material library, its
+costing rules and its company block; people are members with roles. Every
+existing user got a personal workspace holding exactly what they already owned,
+and a single-person business behaves as it did before.
+
+Access is decided at one gate. `assertProjectAccess` resolves a project to its
+workspace and requires a membership row — the same function eighty-odd services
+already called, so they all inherited the new rule at once.
+
+Six roles, with permissions written out per role rather than derived from a
+hierarchy: sales sees costs and cannot touch the canvas, production manages the
+material library and cannot see costs, a worker reads the job and its production
+package and nothing else. Cost visibility is enforced by refusing the read, not
+by filtering the response.
+
+Invitations are by email, with no email sent — the product has no mail provider
+yet, so the link is handed to the inviter to pass on, and the interface says so.
+Accepting requires the signed-in account to be the one invited.
+
+**Next: T19 — Collaboration (Phase 19)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { getSpec } from '@/lib/spec/service';
 import { listProjectMaterials } from '@/lib/materials/service';
 import { formatStockSize, formatThickness, unitLabelFor } from '@/lib/materials/format';
@@ -385,7 +385,7 @@ export async function generateProductionDocument(
   userId: string,
   input: { notes?: string | null } = {}
 ): Promise<Document> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'production.generate');
 
   const view = await getProductionView(projectId, userId);
   if (view.blockers.length > 0) throw badRequest(view.blockers.join(' '));

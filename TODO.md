@@ -632,27 +632,48 @@ Potential future domains:
 
 # Phase 18 — Multi-User Workspaces
 
-## T18 — Teams and Permissions
+## T18 — Teams and Permissions ✅ COMPLETE
 
-- [ ] Workspace model
-- [ ] Members
-- [ ] Roles
-- [ ] Permissions
-- [ ] Project access
-- [ ] Shared materials
-- [ ] Team activity
-- [ ] Secure workspace authorization
+- [x] Workspace model (owns projects, materials, costing rules and the company block)
+- [x] Members (`WorkspaceMember` — this row IS the authorization)
+- [x] Roles (owner, admin, designer, sales, production, worker)
+- [x] Permissions (matrix written out per role, unit-tested exactly)
+- [x] Project access (`assertProjectAccess` resolves workspace then membership)
+- [x] Shared materials (one library per business, not per person)
+- [x] Team activity (audit records invites, joins, role changes, removals)
+- [x] Secure workspace authorization (28 integration tests on isolation and roles)
+- [x] Invitations by email with a token, expiry, revocation and an identity check
+- [x] Backfill giving every existing user a personal workspace, verified to move nothing
+- [x] Branded `WorkspaceId`, so a user id can never be passed where a workspace belongs
+- [x] Quote numbering moved to the business — found by a test during this milestone
+- [x] Tests (36 unit, 28 integration for workspaces alone)
 
-Potential roles:
+### Deliberately NOT built
 
-- Super Admin
-- Owner
-- Designer
-- Sales
-- Production Manager
-- Worker
+- [x] **Super Admin.** The PRD lists it among possible roles, but it is a
+      platform-operator concept, not a workspace one: it would mean an account
+      that can read every business's data. Nothing in the product needs it, and
+      building a cross-tenant superuser without a concrete need is the single
+      most dangerous thing this phase could add.
 
-This phase must be designed as a deliberate workspace architecture, not retrofitted through ad-hoc permissions.
+### Deferred out of T18 (deliberately)
+
+- [ ] Sending invitation emails — no mail provider is wired (`resend` is still
+      a deferred dependency). The link is handed to the inviter, and the
+      interface says plainly that nothing was sent.
+- [ ] Transferring ownership of a workspace — the owner cannot currently hand
+      over; they can promote an admin, but the final transfer needs a
+      confirmation flow of its own
+- [ ] Deleting a shared workspace — cascade would remove every project, quote
+      and package, which needs more than a button
+- [ ] Leaving a workspace you were invited to (self-removal)
+- [ ] Per-project access within a workspace — membership currently grants the
+      role's permissions across every project the business owns
+- [ ] Moving a project between workspaces
+- [ ] Clerk Organizations — TARKIB's own membership model is the source of
+      truth; syncing to the identity provider's is a separate decision
+
+This phase must be designed as a deliberate workspace architecture, not retrofitted through ad-hoc permissions. ✅
 
 ---
 
@@ -776,14 +797,38 @@ Completed:
 - [x] **T15 — Full Version History** (Phase 15)
 - [x] **T16 — Validation and Safety Layer** (Phase 16)
 - [x] **T17 — Domain Framework** (Phase 17)
+- [x] **T18 — Teams and Permissions** (Phase 18)
 
 Active milestone:
 
-- [ ] None. T18 has not been started.
+- [ ] None. T19 has not been started.
 
 Next milestone:
 
-- [ ] **T18 — Teams and Permissions** (Phase 18)
+- [ ] **T19 — Collaboration** (Phase 19)
+
+### T18 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 471 passed |
+| Integration tests | 270 passed against Neon |
+| Production build | passed, 69 routes |
+| Migrations | 22 applied |
+| Backfill | verified: every user has a personal workspace, and zero projects or materials changed hands |
+| Cross-workspace isolation | tested: project, material, listing and workspace all 404 for a non-member |
+| Role enforcement | tested at the service layer, not the interface: worker and production refused cost, designer refused quoting, sales refused design editing |
+| Degradation | tested: a worker opens the project and the integrity report without the cost section |
+| Owner invariants | tested: cannot remove the owner, demote the last owner, or have an admin change who the owner is |
+| Invitations | tested: wrong account, expired and revoked links all refused |
+
+**Two real defects were found during this milestone, both by the work itself.**
+The branded `WorkspaceId` exposed twenty-four call sites that had silently kept
+passing a user id. And a test exposed that quote numbering was still per-person,
+so two members of one business could each issue Q-2026-0001; it now runs per
+workspace, backfilled so no issued quote changed its number.
 
 ### T17 verification record
 

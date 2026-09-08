@@ -15,10 +15,12 @@ import { isAiConfigured } from '@/lib/ai/config';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { confirmUpload, createUploadIntent } from '@/lib/files/service';
 import { deleteObject } from '@/lib/storage/r2';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const enabled = isAiConfigured() && isStorageConfigured();
 const suffix = `vis-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let userId: string;
+let workspaceId: WorkspaceId;
 const uploadedKeys: string[] = [];
 
 /** A synthetic shopfront sign with text the model can be asked to read back. */
@@ -38,6 +40,7 @@ beforeAll(async () => {
     data: { clerkId: `vis-${suffix}`, email: `vis-${suffix}@example.test` },
   });
   userId = user.id;
+  workspaceId = asWorkspaceId((await ensurePersonalWorkspace(userId)).id);
 });
 
 afterAll(async () => {
@@ -54,7 +57,7 @@ describe.skipIf(!enabled)('vision context', () => {
   it(
     'reads an attached image and answers about it in Darija',
     async () => {
-      const project = await createProject(userId, { title: 'vision eval' });
+      const project = await createProject(workspaceId, userId, { title: 'vision eval' });
       const image = await makeSignImage('ATLAS');
 
       // The exact three-step path the browser takes.
@@ -97,8 +100,8 @@ describe.skipIf(!enabled)('vision context', () => {
   it(
     'ignores an attachment id belonging to a different project',
     async () => {
-      const projectA = await createProject(userId, { title: 'vision A' });
-      const projectB = await createProject(userId, { title: 'vision B' });
+      const projectA = await createProject(workspaceId, userId, { title: 'vision A' });
+      const projectB = await createProject(workspaceId, userId, { title: 'vision B' });
       const image = await makeSignImage('SECRET');
 
       const intent = await createUploadIntent(projectA.id, userId, {

@@ -32,10 +32,13 @@ import {
   restoreVersion,
 } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `ver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -55,14 +58,16 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
-  await updateCostSettings(ownerId, {
+  await updateCostSettings(ownerWs, {
     laborType: 'percent', laborBp: 3000, laborCents: 0,
     transportType: 'fixed', transportBp: 0, transportCents: 50_000,
     installType: 'percent', installBp: 1000, installCents: 0,
     marginBp: 4000, taxBp: 2000, currency: 'MAD',
   });
-  await updateQuoteSettings(ownerId, {
+  await updateQuoteSettings(ownerWs, {
     companyName: 'Atelier Nour', companyAddress: null, companyPhone: null,
     companyEmail: null, taxIdentifiers: null, primaryColorHex: null,
     footerText: null, termsText: null, paymentDetails: null,
@@ -77,20 +82,19 @@ afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: users } } });
   await prisma.project.deleteMany({ where: { userId: users } });
   await prisma.material.deleteMany({ where: { userId: users } });
-  await prisma.costSettings.deleteMany({ where: { userId: users } });
-  await prisma.quoteSettings.deleteMany({ where: { userId: users } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: users } } } });
   await prisma.user.deleteMany({ where: { id: users } });
   await prisma.$disconnect();
 });
 
 /** A project with an approved spec, a seeded canvas and one calculated line. */
 async function fullProject(userId = ownerId) {
-  const project = await createProject(userId, { title: `Shopfront ${Math.random()}` });
+  const project = await createProject(ownerWs, userId, { title: `Shopfront ${Math.random()}` });
   await updateDraftSpec(project.id, userId, COMPLETE_SPEC);
   await approveSpec(project.id, userId);
   await seedScene(project.id, userId);
 
-  const material = await createMaterial(userId, {
+  const material = await createMaterial(ownerWs, userId, {
     name: `tube-${Math.random()}`,
     category: 'Metal', customCategory: false,
     measurementModel: 'linear', standardLengthMm: 6000, unitPriceCents: 20_000,
@@ -125,7 +129,7 @@ describe('what a snapshot captures', () => {
   it('distinguishes a project with no canvas from one with an empty canvas', async () => {
     // An absent scene and an emptied scene are different facts. Conflating them
     // would make the diff report every object as removed.
-    const project = await createProject(ownerId, { title: 'No canvas' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No canvas' });
     expect((await captureSnapshot(project.id)).canvas).toBeNull();
 
     const { project: seeded } = await fullProject();
@@ -147,7 +151,7 @@ describe('what a snapshot captures', () => {
 
 describe('moments that record a version', () => {
   it('records one when a specification is approved', async () => {
-    const project = await createProject(ownerId, { title: 'Approving' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Approving' });
     await updateDraftSpec(project.id, ownerId, COMPLETE_SPEC);
     await approveSpec(project.id, ownerId);
 

@@ -12,10 +12,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { createProject } from '@/lib/projects/service';
 import { createUploadIntent, deleteFile, listFiles, loadReadyFiles } from './service';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const r2Keys = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME'];
 const savedEnv: Record<string, string | undefined> = {};
@@ -28,6 +31,8 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterEach(() => {
@@ -39,18 +44,19 @@ afterEach(() => {
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 describe('file ownership', () => {
   it("refuses to list another user's files", async () => {
-    const project = await createProject(ownerId, { title: 'Files private' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Files private' });
     await expect(listFiles(project.id, otherId)).rejects.toMatchObject({ status: 404 });
   });
 
   it("refuses to authorise an upload into another user's project", async () => {
-    const project = await createProject(ownerId, { title: 'No upload' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No upload' });
     await expect(
       createUploadIntent(project.id, otherId, {
         originalName: 'x.jpg',
@@ -65,7 +71,7 @@ describe('file ownership', () => {
   });
 
   it("refuses to delete another user's file", async () => {
-    const project = await createProject(ownerId, { title: 'No delete' });
+    const project = await createProject(ownerWs, ownerId, { title: 'No delete' });
     const row = await prisma.file.create({
       data: {
         projectId: project.id,
@@ -85,7 +91,7 @@ describe('file ownership', () => {
 
   it('checks ownership BEFORE storage configuration', async () => {
     for (const key of r2Keys) delete process.env[key];
-    const project = await createProject(ownerId, { title: 'Order matters' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Order matters' });
 
     // An outsider must get 404, never the 503 that would reveal whether storage
     // is configured on this deployment.
@@ -112,7 +118,7 @@ describe('file ownership', () => {
 
 describe('file visibility', () => {
   it('hides pending uploads from listings until confirmed', async () => {
-    const project = await createProject(ownerId, { title: 'Pending hidden' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Pending hidden' });
     await prisma.file.create({
       data: {
         projectId: project.id,
@@ -130,8 +136,8 @@ describe('file visibility', () => {
   });
 
   it('will not load a file belonging to a different project', async () => {
-    const projectA = await createProject(ownerId, { title: 'A' });
-    const projectB = await createProject(ownerId, { title: 'B' });
+    const projectA = await createProject(ownerWs, ownerId, { title: 'A' });
+    const projectB = await createProject(ownerWs, ownerId, { title: 'B' });
     const row = await prisma.file.create({
       data: {
         projectId: projectA.id,

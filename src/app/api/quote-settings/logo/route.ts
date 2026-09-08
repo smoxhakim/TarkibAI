@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { requireDbUser } from '@/lib/auth/current-user';
 import { badRequest, handleRoute } from '@/lib/http/api';
 import { MAX_LOGO_BYTES, removeQuoteLogo, setQuoteLogo } from '@/lib/quotes/settings-service';
+import { assertWorkspacePermission, resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 /**
  * PUT /api/quote-settings/logo — the raw image bytes, typed by Content-Type.
@@ -21,14 +22,18 @@ export async function PUT(req: NextRequest) {
     if (declaredLength > MAX_LOGO_BYTES) throw badRequest('A logo must be 2 MB or smaller.');
 
     const bytes = Buffer.from(await req.arrayBuffer());
-    return { settings: await setQuoteLogo(user.id, bytes, mimeType) };
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    await assertWorkspacePermission(workspaceId, user.id, 'quote.create');
+    return { settings: await setQuoteLogo(workspaceId, bytes, mimeType) };
   });
 }
 
 // DELETE /api/quote-settings/logo
-export async function DELETE(_req: NextRequest) {
+export async function DELETE(req: NextRequest) {
   return handleRoute(async () => {
     const user = await requireDbUser();
-    return { settings: await removeQuoteLogo(user.id) };
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    await assertWorkspacePermission(workspaceId, user.id, 'quote.create');
+    return { settings: await removeQuoteLogo(workspaceId) };
   });
 }

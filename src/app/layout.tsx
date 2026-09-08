@@ -28,6 +28,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     {strings.materials.navLink}
                   </Link>
                   <Link
+                    href="/workspace"
+                    className="text-ink-muted transition-colors hover:text-ink"
+                  >
+                    {strings.workspaces.navLink}
+                  </Link>
+                  <Link
                     href="/settings/costing"
                     className="text-ink-muted transition-colors hover:text-ink"
                   >

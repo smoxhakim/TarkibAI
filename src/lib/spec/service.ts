@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import type { ProjectSpec } from '@/generated/prisma/client';
 import { missingFields, type SpecFieldKey } from './completeness';
 import { getDomain } from '@/lib/domains/registry';
@@ -96,7 +96,8 @@ export async function updateDraftSpec(
  * exact project state that produced them (PRD §21).
  */
 export async function approveSpec(projectId: string, userId: string): Promise<SpecView> {
-  const project = await assertProjectAccess(projectId, userId);
+  // Approving fixes what the project is. It is an edit, not a read.
+  const { project } = await assertProjectPermission(projectId, userId, 'project.edit');
   const required = getDomain(project.domain).requiredSpecFields;
 
   const latest = await latestSpecRow(projectId);

@@ -13,10 +13,13 @@ import { prisma } from '@/lib/db';
 import { createProject } from '@/lib/projects/service';
 import { approveSpec, getSpec, updateDraftSpec } from './service';
 import type { ProjectSpecPatch } from './schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `spec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -35,17 +38,20 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 describe('draft specification', () => {
   it('starts empty and reports every required field as missing', async () => {
-    const project = await createProject(ownerId, { title: 'Empty spec' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Empty spec' });
     const view = await getSpec(project.id, ownerId);
     expect(view.version).toBe(0);
     expect(view.complete).toBe(false);
@@ -53,7 +59,7 @@ describe('draft specification', () => {
   });
 
   it('accumulates patches across turns without losing earlier facts', async () => {
-    const project = await createProject(ownerId, { title: 'Accumulating' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Accumulating' });
 
     await updateDraftSpec(project.id, ownerId, { projectType: 'enseigne' });
     await updateDraftSpec(project.id, ownerId, { dimensions: { width: 8, unit: 'm' } });
@@ -66,7 +72,7 @@ describe('draft specification', () => {
   });
 
   it("refuses to read or write another user's specification", async () => {
-    const project = await createProject(ownerId, { title: 'Private spec' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Private spec' });
     await updateDraftSpec(project.id, ownerId, { projectType: 'totem' });
 
     await expect(getSpec(project.id, otherId)).rejects.toMatchObject({ status: 404 });
@@ -81,7 +87,7 @@ describe('draft specification', () => {
 
 describe('approval', () => {
   it('refuses to approve an incomplete specification', async () => {
-    const project = await createProject(ownerId, { title: 'Incomplete' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Incomplete' });
     await updateDraftSpec(project.id, ownerId, { projectType: 'enseigne' });
 
     await expect(approveSpec(project.id, ownerId)).rejects.toMatchObject({ status: 400 });
@@ -92,12 +98,12 @@ describe('approval', () => {
   });
 
   it('refuses to approve when no specification exists at all', async () => {
-    const project = await createProject(ownerId, { title: 'Nothing yet' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Nothing yet' });
     await expect(approveSpec(project.id, ownerId)).rejects.toMatchObject({ status: 400 });
   });
 
   it('approves a complete spec, snapshots a version, and advances the project stage', async () => {
-    const project = await createProject(ownerId, { title: 'Approvable' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Approvable' });
     await updateDraftSpec(project.id, ownerId, COMPLETE);
 
     const approved = await approveSpec(project.id, ownerId);
@@ -116,7 +122,7 @@ describe('approval', () => {
   });
 
   it('refuses to approve the same version twice', async () => {
-    const project = await createProject(ownerId, { title: 'Double approve' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Double approve' });
     await updateDraftSpec(project.id, ownerId, COMPLETE);
     await approveSpec(project.id, ownerId);
 
@@ -125,7 +131,7 @@ describe('approval', () => {
   });
 
   it("refuses to approve another user's specification", async () => {
-    const project = await createProject(ownerId, { title: 'Not yours' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Not yours' });
     await updateDraftSpec(project.id, ownerId, COMPLETE);
 
     await expect(approveSpec(project.id, otherId)).rejects.toMatchObject({ status: 404 });
@@ -133,7 +139,7 @@ describe('approval', () => {
   });
 
   it('opens a NEW draft version after approval instead of mutating the approved one', async () => {
-    const project = await createProject(ownerId, { title: 'Edit after approval' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Edit after approval' });
     await updateDraftSpec(project.id, ownerId, COMPLETE);
     await approveSpec(project.id, ownerId);
 
@@ -149,7 +155,7 @@ describe('approval', () => {
   });
 
   it('numbers subsequent approvals sequentially', async () => {
-    const project = await createProject(ownerId, { title: 'Two approvals' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Two approvals' });
     await updateDraftSpec(project.id, ownerId, COMPLETE);
     await approveSpec(project.id, ownerId);
     await updateDraftSpec(project.id, ownerId, { quantity: 9 });

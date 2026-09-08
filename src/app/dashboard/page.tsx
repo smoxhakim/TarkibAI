@@ -6,6 +6,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { NewProjectForm } from '@/components/NewProjectForm';
 import { ProjectActions } from '@/components/ProjectActions';
 import { DOMAINS } from '@/lib/domains/registry';
+import { resolveActiveWorkspace } from '@/lib/workspaces/access';
+import { listWorkspacesFor } from '@/lib/workspaces/service';
+import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
+import { can } from '@/lib/workspaces/permissions';
 
 // Reads the signed-in user's own data, so it must never be statically cached.
 export const dynamic = 'force-dynamic';
@@ -15,13 +19,15 @@ const dateFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'sh
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ archived?: string }>;
+  searchParams: Promise<{ archived?: string; workspace?: string }>;
 }) {
-  const { archived } = await searchParams;
+  const { archived, workspace } = await searchParams;
   const showArchived = archived === 'true';
 
   const user = await requireDbUser();
-  const projects = await listProjects(user.id, { includeArchived: showArchived });
+  const { workspaceId, role } = await resolveActiveWorkspace(user.id, workspace ?? null);
+  const workspaces = await listWorkspacesFor(user.id);
+  const projects = await listProjects(workspaceId, { includeArchived: showArchived });
   const visible = showArchived ? projects.filter((p) => p.archivedAt) : projects;
 
   return (
@@ -31,6 +37,7 @@ export default async function DashboardPage({
           <h1 className="text-2xl font-semibold tracking-tight">{strings.projects.title}</h1>
           <p className="mt-1 text-sm text-ink-muted">{strings.projects.subtitle}</p>
         </div>
+        <WorkspaceSwitcher workspaces={workspaces} activeId={workspaceId} />
         <Link
           href={showArchived ? '/dashboard' : '/dashboard?archived=true'}
           className="text-sm text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
@@ -41,13 +48,16 @@ export default async function DashboardPage({
 
       {showArchived ? null : (
         <div className="mt-6">
+          {can(role, 'project.create') ? (
           <NewProjectForm
             domains={DOMAINS.map((domain) => ({
               id: domain.id,
               label: domain.label,
               description: domain.description,
             }))}
+            workspaceId={workspaceId}
           />
+          ) : null}
         </div>
       )}
 

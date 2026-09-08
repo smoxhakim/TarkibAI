@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import type { WorkspaceId } from '@/lib/workspaces/access';
 import { ApiError, badRequest } from '@/lib/http/api';
 import { buildObjectKey } from '@/lib/storage/keys';
 import { isStorageConfigured } from '@/lib/storage/config';
@@ -17,27 +18,37 @@ const DEFAULTS = {
   numberPrefix: 'Q',
 } as const;
 
-export async function getQuoteSettings(userId: string): Promise<QuoteSettings> {
-  const existing = await prisma.quoteSettings.findUnique({ where: { userId } });
+export async function getQuoteSettings(workspaceId: WorkspaceId): Promise<QuoteSettings> {
+  const existing = await prisma.quoteSettings.findUnique({ where: { workspaceId } });
   if (existing) return existing;
 
-  // Seeded once from the account's company name, then independent: the name on
-  // the account and the name a client should see need not stay in step.
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { companyName: true } });
+  // Seeded once from the workspace's own name, then independent: what the
+  // business is called and what a client should see need not stay in step.
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { name: true, personal: true },
+  });
 
   return prisma.quoteSettings.create({
-    data: { userId, ...DEFAULTS, companyName: user?.companyName ?? null },
+    // A personal workspace is named after its owner, which is rarely the
+    // trading name, so it seeds empty rather than with something a client
+    // should not see on a quote.
+    data: {
+      workspaceId,
+      ...DEFAULTS,
+      companyName: workspace && !workspace.personal ? workspace.name : null,
+    },
   });
 }
 
 export async function updateQuoteSettings(
-  userId: string,
+  workspaceId: WorkspaceId,
   input: QuoteSettingsPayload
 ): Promise<QuoteSettings> {
   return prisma.quoteSettings.upsert({
-    where: { userId },
+    where: { workspaceId },
     update: input,
-    create: { userId, ...input },
+    create: { workspaceId, ...input },
   });
 }
 
@@ -55,7 +66,7 @@ export const LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as cons
  * it to protect against.
  */
 export async function setQuoteLogo(
-  userId: string,
+  workspaceId: WorkspaceId,
   bytes: Buffer,
   mimeType: string
 ): Promise<QuoteSettings> {
@@ -71,10 +82,10 @@ export async function setQuoteLogo(
   }
 
   const { putObject, deleteObject } = await import('@/lib/storage/r2');
-  const settings = await getQuoteSettings(userId);
+  const settings = await getQuoteSettings(workspaceId);
 
   const objectKey = buildObjectKey({
-    userId,
+    userId: workspaceId,
     // Not project-scoped: a logo belongs to the business, not to one job.
     projectId: 'account',
     fileId: `logo-${Date.now()}`,
@@ -85,7 +96,7 @@ export async function setQuoteLogo(
   await putObject(objectKey, bytes, mimeType);
 
   const updated = await prisma.quoteSettings.update({
-    where: { userId },
+    where: { workspaceId },
     data: { logoObjectKey: objectKey, logoMimeType: mimeType },
   });
 
@@ -100,12 +111,12 @@ export async function setQuoteLogo(
   return updated;
 }
 
-export async function removeQuoteLogo(userId: string): Promise<QuoteSettings> {
-  const settings = await getQuoteSettings(userId);
+export async function removeQuoteLogo(workspaceId: WorkspaceId): Promise<QuoteSettings> {
+  const settings = await getQuoteSettings(workspaceId);
   if (!settings.logoObjectKey) return settings;
 
   const updated = await prisma.quoteSettings.update({
-    where: { userId },
+    where: { workspaceId },
     data: { logoObjectKey: null, logoMimeType: null },
   });
 

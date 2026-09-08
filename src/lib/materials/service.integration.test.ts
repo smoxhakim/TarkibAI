@@ -21,10 +21,13 @@ import {
   updateMaterial,
 } from './service';
 import type { CreateMaterialInput } from './schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `mat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const sheetInput: CreateMaterialInput = {
   name: 'Alucobond 3mm noir',
@@ -44,26 +47,29 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: { in: [ownerId, otherId] } } } });
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
   await prisma.material.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 describe('library isolation', () => {
   it("never returns another user's materials or prices", async () => {
-    await createMaterial(ownerId, { ...sheetInput, name: `Owner secret ${suffix}` });
+    await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Owner secret ${suffix}` });
 
-    const otherLibrary = await listMaterials(otherId, { includeArchived: true });
+    const otherLibrary = await listMaterials(otherWs, { includeArchived: true });
     expect(otherLibrary.map((m) => m.name)).not.toContain(`Owner secret ${suffix}`);
   });
 
   it("refuses to read, edit, archive or delete another user's material", async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Private ${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Private ${suffix}` });
 
     await expect(getMaterial(material.id, otherId)).rejects.toMatchObject({ status: 404 });
     await expect(
@@ -80,7 +86,7 @@ describe('library isolation', () => {
 
 describe('search and filtering', () => {
   it('matches on name, supplier and notes, case-insensitively', async () => {
-    await createMaterial(ownerId, {
+    await createMaterial(ownerWs, ownerId, {
       ...sheetInput,
       name: `Plexi opale ${suffix}`,
       category: 'Acrylic',
@@ -88,18 +94,18 @@ describe('search and filtering', () => {
       notes: 'commande spéciale',
     });
 
-    const byName = await listMaterials(ownerId, { search: 'PLEXI OPALE', includeArchived: false });
+    const byName = await listMaterials(ownerWs, { search: 'PLEXI OPALE', includeArchived: false });
     expect(byName.some((m) => m.name.includes('Plexi opale'))).toBe(true);
 
-    const bySupplier = await listMaterials(ownerId, { search: 'sonasid', includeArchived: false });
+    const bySupplier = await listMaterials(ownerWs, { search: 'sonasid', includeArchived: false });
     expect(bySupplier.length).toBeGreaterThan(0);
 
-    const byNotes = await listMaterials(ownerId, { search: 'spéciale', includeArchived: false });
+    const byNotes = await listMaterials(ownerWs, { search: 'spéciale', includeArchived: false });
     expect(byNotes.length).toBeGreaterThan(0);
   });
 
   it('filters by category and measurement model', async () => {
-    await createMaterial(ownerId, {
+    await createMaterial(ownerWs, ownerId, {
       name: `Tube ${suffix}`,
       category: 'Metal',
       customCategory: false,
@@ -108,15 +114,15 @@ describe('search and filtering', () => {
       unitPriceCents: 12000,
     });
 
-    const metal = await listMaterials(ownerId, { category: 'Metal', includeArchived: false });
+    const metal = await listMaterials(ownerWs, { category: 'Metal', includeArchived: false });
     expect(metal.every((m) => m.category === 'Metal')).toBe(true);
 
-    const linear = await listMaterials(ownerId, { measurementModel: 'linear', includeArchived: false });
+    const linear = await listMaterials(ownerWs, { measurementModel: 'linear', includeArchived: false });
     expect(linear.every((m) => m.measurementModel === 'linear')).toBe(true);
   });
 
   it('lists only categories the user actually has', async () => {
-    const categories = await listCategories(ownerId);
+    const categories = await listCategories(ownerWs);
     expect(categories).toContain('Panel');
     expect(new Set(categories).size).toBe(categories.length);
   });
@@ -124,13 +130,13 @@ describe('search and filtering', () => {
 
 describe('archiving and deletion', () => {
   it('hides archived materials by default and restores them', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Archivable ${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Archivable ${suffix}` });
 
     await setMaterialArchived(material.id, ownerId, true);
-    const visible = await listMaterials(ownerId, { includeArchived: false });
+    const visible = await listMaterials(ownerWs, { includeArchived: false });
     expect(visible.map((m) => m.id)).not.toContain(material.id);
 
-    const all = await listMaterials(ownerId, { includeArchived: true });
+    const all = await listMaterials(ownerWs, { includeArchived: true });
     expect(all.map((m) => m.id)).toContain(material.id);
 
     await setMaterialArchived(material.id, ownerId, false);
@@ -138,14 +144,14 @@ describe('archiving and deletion', () => {
   });
 
   it('deletes a material that no project uses', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Unused ${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Unused ${suffix}` });
     await deleteMaterial(material.id, ownerId);
     await expect(getMaterial(material.id, ownerId)).rejects.toMatchObject({ status: 404 });
   });
 
   it('refuses to delete a material a project depends on', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `In use ${suffix}` });
-    const project = await createProject(ownerId, { title: 'Uses material' });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `In use ${suffix}` });
+    const project = await createProject(ownerWs, ownerId, { title: 'Uses material' });
     await selectProjectMaterial(project.id, ownerId, material.id, 'façade');
 
     // Deleting would orphan any quote or production document that referenced it.
@@ -157,7 +163,7 @@ describe('archiving and deletion', () => {
   });
 
   it('clears dimensions that no longer apply when the model changes', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Switcher ${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Switcher ${suffix}` });
 
     const updated = await updateMaterial(material.id, ownerId, {
       name: `Switcher ${suffix}`,
@@ -177,8 +183,8 @@ describe('archiving and deletion', () => {
 
 describe('project selection', () => {
   it('records a selection with no calculated values', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Selectable ${suffix}` });
-    const project = await createProject(ownerId, { title: 'Selection' });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Selectable ${suffix}` });
+    const project = await createProject(ownerWs, ownerId, { title: 'Selection' });
 
     const rows = await selectProjectMaterial(project.id, ownerId, material.id, 'façade');
     expect(rows).toHaveLength(1);
@@ -193,8 +199,8 @@ describe('project selection', () => {
   });
 
   it('refuses to select the same material twice', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Once ${suffix}` });
-    const project = await createProject(ownerId, { title: 'Once only' });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Once ${suffix}` });
+    const project = await createProject(ownerWs, ownerId, { title: 'Once only' });
 
     await selectProjectMaterial(project.id, ownerId, material.id, null);
     await expect(selectProjectMaterial(project.id, ownerId, material.id, null)).rejects.toMatchObject({
@@ -203,8 +209,8 @@ describe('project selection', () => {
   });
 
   it("refuses to select another user's material into your project", async () => {
-    const foreign = await createMaterial(otherId, { ...sheetInput, name: `Foreign ${suffix}` });
-    const project = await createProject(ownerId, { title: 'Cross user' });
+    const foreign = await createMaterial(otherWs, otherId, { ...sheetInput, name: `Foreign ${suffix}` });
+    const project = await createProject(ownerWs, ownerId, { title: 'Cross user' });
 
     // Otherwise a project could reference someone else's private pricing.
     await expect(selectProjectMaterial(project.id, ownerId, foreign.id, null)).rejects.toMatchObject({
@@ -214,9 +220,9 @@ describe('project selection', () => {
   });
 
   it('refuses to select an archived material', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Archived pick ${suffix}` });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Archived pick ${suffix}` });
     await setMaterialArchived(material.id, ownerId, true);
-    const project = await createProject(ownerId, { title: 'Archived pick' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Archived pick' });
 
     await expect(selectProjectMaterial(project.id, ownerId, material.id, null)).rejects.toMatchObject({
       status: 400,
@@ -224,8 +230,8 @@ describe('project selection', () => {
   });
 
   it("refuses to list or remove another user's project selections", async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Guarded ${suffix}` });
-    const project = await createProject(ownerId, { title: 'Guarded' });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Guarded ${suffix}` });
+    const project = await createProject(ownerWs, ownerId, { title: 'Guarded' });
     const rows = await selectProjectMaterial(project.id, ownerId, material.id, null);
 
     await expect(listProjectMaterials(project.id, otherId)).rejects.toMatchObject({ status: 404 });
@@ -236,8 +242,8 @@ describe('project selection', () => {
   });
 
   it('removes a selection without touching the library material', async () => {
-    const material = await createMaterial(ownerId, { ...sheetInput, name: `Removable ${suffix}` });
-    const project = await createProject(ownerId, { title: 'Removable' });
+    const material = await createMaterial(ownerWs, ownerId, { ...sheetInput, name: `Removable ${suffix}` });
+    const project = await createProject(ownerWs, ownerId, { title: 'Removable' });
     const rows = await selectProjectMaterial(project.id, ownerId, material.id, null);
 
     await removeProjectMaterial(project.id, ownerId, rows[0].id);

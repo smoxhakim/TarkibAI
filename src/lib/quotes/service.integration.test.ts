@@ -29,10 +29,13 @@ import {
   updateQuote,
 } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -74,10 +77,12 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
-  await updateCostSettings(ownerId, COST_SETTINGS);
-  await updateCostSettings(otherId, COST_SETTINGS);
-  await updateQuoteSettings(ownerId, {
+  await updateCostSettings(ownerWs, COST_SETTINGS);
+  await updateCostSettings(otherWs, COST_SETTINGS);
+  await updateQuoteSettings(ownerWs, {
     companyName: 'Atelier Nour',
     companyAddress: '12 Rue des Artisans, Casablanca',
     companyPhone: '+212 522 00 00 00',
@@ -98,8 +103,7 @@ afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: users } } });
   await prisma.project.deleteMany({ where: { userId: users } });
   await prisma.material.deleteMany({ where: { userId: users } });
-  await prisma.costSettings.deleteMany({ where: { userId: users } });
-  await prisma.quoteSettings.deleteMany({ where: { userId: users } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: users } } } });
   await prisma.user.deleteMany({ where: { id: users } });
   await prisma.$disconnect();
 });
@@ -117,12 +121,12 @@ afterAll(async () => {
  *   tax        20%             =  53 200
  *   client total                 319 200
  */
-async function costedProject(userId = ownerId) {
-  const project = await createProject(userId, { title: `Shopfront ${Math.random()}` });
+async function costedProject(userId = ownerId, workspaceId: WorkspaceId = ownerWs) {
+  const project = await createProject(workspaceId, userId, { title: `Shopfront ${Math.random()}` });
   await updateDraftSpec(project.id, userId, COMPLETE_SPEC);
   await approveSpec(project.id, userId);
 
-  const material = await createMaterial(userId, {
+  const material = await createMaterial(workspaceId, userId, {
     name: `tube-${Math.random()}`,
     category: 'Metal',
     customCategory: false,
@@ -147,14 +151,14 @@ const client = { clientName: 'Cafe Milano', clientAddress: '45 Boulevard Zerktou
 
 describe('the cost gate', () => {
   it('refuses to quote a project that has not been costed', async () => {
-    const project = await createProject(ownerId, { title: 'Uncosted' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Uncosted' });
 
     await expect(createQuote(project.id, ownerId, client)).rejects.toMatchObject({ status: 400 });
     expect(await prisma.quote.count({ where: { projectId: project.id } })).toBe(0);
   });
 
   it('says what is missing rather than producing an empty quote', async () => {
-    const project = await createProject(ownerId, { title: 'Uncosted 2' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Uncosted 2' });
 
     await expect(createQuote(project.id, ownerId, client)).rejects.toThrow(/materials|cost/i);
   });
@@ -178,9 +182,9 @@ describe('seeding from the calculation', () => {
     const { project } = await costedProject();
     // Changed after the cost was computed. The quote must price on the rate the
     // calculation used, or the totals would not reconcile with it.
-    await updateCostSettings(ownerId, { ...COST_SETTINGS, taxBp: 700 });
+    await updateCostSettings(ownerWs, { ...COST_SETTINGS, taxBp: 700 });
     const quote = await createQuote(project.id, ownerId, client);
-    await updateCostSettings(ownerId, COST_SETTINGS);
+    await updateCostSettings(ownerWs, COST_SETTINGS);
 
     expect(quote.taxBp).toBe(2000);
   });
@@ -205,9 +209,22 @@ describe('numbering', () => {
     expect(first.number).toMatch(/^Q-\d{4}-\d{4}$/);
   });
 
-  it('does not share a sequence between users', async () => {
-    const theirs = await createQuote((await costedProject(otherId)).project.id, otherId, client);
+  it('does not share a sequence between businesses', async () => {
+    // Per business, not per person: two members of one workspace must never
+    // both produce Q-2026-0001, and two workspaces must not see each other's
+    // numbering.
+    await updateCostSettings(otherWs, COST_SETTINGS);
+    const project = (await costedProject(otherId, otherWs)).project;
+    const theirs = await createQuote(project.id, otherId, client);
+
     expect(theirs.sequence).toBe(1);
+    expect(theirs.workspaceId).toBe(otherWs);
+  });
+
+  it('continues one sequence across the members of a business', async () => {
+    const first = await createQuote((await costedProject()).project.id, ownerId, client);
+    const second = await createQuote((await costedProject()).project.id, ownerId, client);
+    expect(second.sequence).toBe(first.sequence + 1);
   });
 });
 
@@ -297,8 +314,9 @@ describe('issuing', () => {
     const nameless = await prisma.user.create({
       data: { clerkId: `qn-${suffix}`, email: `qn-${suffix}@example.test` },
     });
-    await updateCostSettings(nameless.id, COST_SETTINGS);
-    const { project } = await costedProject(nameless.id);
+    const namelessWs = asWorkspaceId((await ensurePersonalWorkspace(nameless.id)).id);
+    await updateCostSettings(namelessWs, COST_SETTINGS);
+    const { project } = await costedProject(nameless.id, namelessWs);
     const quote = await createQuote(project.id, nameless.id, client);
 
     await expect(issueQuote(quote.id, nameless.id)).rejects.toThrow(/company name/i);
@@ -308,8 +326,7 @@ describe('issuing', () => {
     await prisma.projectMaterial.deleteMany({ where: { material: { userId: nameless.id } } });
     await prisma.project.deleteMany({ where: { userId: nameless.id } });
     await prisma.material.deleteMany({ where: { userId: nameless.id } });
-    await prisma.costSettings.deleteMany({ where: { userId: nameless.id } });
-    await prisma.quoteSettings.deleteMany({ where: { userId: nameless.id } });
+    await prisma.workspace.deleteMany({ where: { members: { some: { userId: nameless.id } } } });
     await prisma.user.delete({ where: { id: nameless.id } });
   });
 
@@ -332,10 +349,10 @@ describe('issuing', () => {
     expect(issued.pdfObjectKey).toBeTruthy();
 
     // The company is renamed afterwards. The issued quote must not follow.
-    const before = await getQuoteSettings(ownerId);
-    await updateQuoteSettings(ownerId, { ...toPayload(before), companyName: 'Renamed Atelier' });
+    const before = await getQuoteSettings(ownerWs);
+    await updateQuoteSettings(ownerWs, { ...toPayload(before), companyName: 'Renamed Atelier' });
     const document = await buildQuoteDocument(quote.id, ownerId);
-    await updateQuoteSettings(ownerId, toPayload(before));
+    await updateQuoteSettings(ownerWs, toPayload(before));
 
     expect(document.issuer.companyName).toBe('Atelier Nour');
   });

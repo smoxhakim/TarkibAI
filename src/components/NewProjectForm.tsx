@@ -6,7 +6,14 @@ import { strings } from '@/lib/strings';
 
 export type DomainOption = { id: string; label: string; description: string };
 
-export function NewProjectForm({ domains }: { domains: DomainOption[] }) {
+export function NewProjectForm({
+  domains,
+  workspaceId,
+}: {
+  domains: DomainOption[];
+  /** The workspace being viewed. A project is created where you are looking. */
+  workspaceId: string;
+}) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [domain, setDomain] = useState(domains[0]?.id ?? 'signage');
@@ -26,7 +33,7 @@ export function NewProjectForm({ domains }: { domains: DomainOption[] }) {
     setPending(true);
     setError(null);
     try {
-      const res = await fetch('/api/projects', {
+      const res = await fetch(`/api/projects?workspaceId=${encodeURIComponent(workspaceId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: trimmed, domain }),

@@ -12,10 +12,13 @@ import { createProject } from '@/lib/projects/service';
 import { createMaterial, selectProjectMaterial } from '@/lib/materials/service';
 import { addPiece, calculatePlan } from '@/lib/calc/cutting/service';
 import { applyMaterialSwitch, getRecommendations } from './service';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `eff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 let standardId: string;
 let cheaperId: string;
 let barId: string;
@@ -27,8 +30,10 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
-  const standard = await createMaterial(ownerId, {
+  const standard = await createMaterial(ownerWs, ownerId, {
     name: `Alucobond standard ${suffix}`,
     category: 'Panel',
     customCategory: false,
@@ -39,7 +44,7 @@ beforeAll(async () => {
   });
   standardId = standard.id;
 
-  const cheaper = await createMaterial(ownerId, {
+  const cheaper = await createMaterial(ownerWs, ownerId, {
     name: `Alucobond budget ${suffix}`,
     category: 'Panel',
     customCategory: false,
@@ -50,7 +55,7 @@ beforeAll(async () => {
   });
   cheaperId = cheaper.id;
 
-  const bar = await createMaterial(ownerId, {
+  const bar = await createMaterial(ownerWs, ownerId, {
     name: `Tube ${suffix}`,
     category: 'Metal',
     customCategory: false,
@@ -68,12 +73,13 @@ afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: { in: [ownerId, otherId] } } } });
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
   await prisma.material.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 async function projectWithPieces() {
-  const project = await createProject(ownerId, { title: `eff ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `eff ${Math.random()}` });
   await addPiece(project.id, ownerId, {
     materialId: standardId,
     label: 'Face',
@@ -87,14 +93,14 @@ async function projectWithPieces() {
 
 describe('scope', () => {
   it('explains why there is nothing to compare on an empty project', async () => {
-    const project = await createProject(ownerId, { title: 'Empty' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Empty' });
     const result = await getRecommendations(project.id, ownerId);
     expect(result.recommendations).toHaveLength(0);
     expect(result.emptyReason).toContain('Add the pieces or cut lengths');
   });
 
   it("never considers another user's materials", async () => {
-    const foreignCheap = await createMaterial(otherId, {
+    const foreignCheap = await createMaterial(otherWs, otherId, {
       name: `Foreign bargain ${suffix}`,
       category: 'Panel',
       customCategory: false,
@@ -119,7 +125,7 @@ describe('scope', () => {
   });
 
   it('ignores archived materials', async () => {
-    const archived = await createMaterial(ownerId, {
+    const archived = await createMaterial(ownerWs, ownerId, {
       name: `Archived bargain ${suffix}`,
       category: 'Panel',
       customCategory: false,
@@ -208,7 +214,7 @@ describe('applying a recommendation', () => {
   });
 
   it("refuses to switch to another user's material", async () => {
-    const foreign = await createMaterial(otherId, {
+    const foreign = await createMaterial(otherWs, otherId, {
       name: `Foreign ${suffix}`,
       category: 'Panel',
       customCategory: false,

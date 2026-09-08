@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, hasProjectPermission } from '@/lib/projects/service';
 import { getDomain } from '@/lib/domains/registry';
 import { getSpec } from '@/lib/spec/service';
 import { listProjectMaterials } from '@/lib/materials/service';
@@ -78,10 +78,14 @@ export async function getIntegrityReport(
   const project = await assertProjectAccess(projectId, userId);
   const domain = getDomain(project.domain);
 
+  // A role without cost visibility gets a report without the cost section, not
+  // an error. Everything else it may see is still checked.
+  const canSeeCost = await hasProjectPermission(projectId, userId, 'cost.view');
+
   const [spec, materialRows, costView, sceneView, sheetPlans, linearPlans] = await Promise.all([
     getSpec(projectId, userId),
     listProjectMaterials(projectId, userId),
-    getProjectCost(projectId, userId),
+    canSeeCost ? getProjectCost(projectId, userId) : Promise.resolve(null),
     getScene(projectId, userId),
     listPlans(projectId, userId),
     listLinearPlans(projectId, userId),
@@ -128,11 +132,13 @@ export async function getIntegrityReport(
         }))
     ),
 
-    ...checkCost({
-      exists: costView.cost !== null,
-      stale: costView.stale,
-      blockedReason: costView.blockedReason,
-    }),
+    ...(costView
+      ? checkCost({
+          exists: costView.cost !== null,
+          stale: costView.stale,
+          blockedReason: costView.blockedReason,
+        })
+      : []),
 
     ...checkDesign({
       hasScene: sceneView.scene.objects.length > 0,

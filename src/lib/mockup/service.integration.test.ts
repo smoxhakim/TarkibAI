@@ -11,10 +11,13 @@ import { prisma } from '@/lib/db';
 import { createProject } from '@/lib/projects/service';
 import { updateDraftSpec } from '@/lib/spec/service';
 import { deleteMockup, listMockups, requestMockup, runMockup } from './service';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `mk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 let otherId: string;
+let otherWs: WorkspaceId;
 
 const savedToken = process.env.REPLICATE_API_TOKEN;
 const savedR2 = process.env.R2_BUCKET_NAME;
@@ -26,6 +29,8 @@ beforeAll(async () => {
   ]);
   ownerId = owner.id;
   otherId = other.id;
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 });
 
 afterEach(() => {
@@ -37,12 +42,13 @@ afterEach(() => {
 
 afterAll(async () => {
   await prisma.project.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: { in: [ownerId, otherId] } } } } });
   await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
   await prisma.$disconnect();
 });
 
 async function describedProject() {
-  const project = await createProject(ownerId, { title: `mockup ${Math.random()}` });
+  const project = await createProject(ownerWs, ownerId, { title: `mockup ${Math.random()}` });
   await updateDraftSpec(project.id, ownerId, {
     projectType: 'enseigne',
     materials: [{ name: 'alucobond noir' }],
@@ -62,7 +68,7 @@ describe('preconditions', () => {
 
   it('refuses before the project has been described', async () => {
     process.env.REPLICATE_API_TOKEN = 'test-token';
-    const project = await createProject(ownerId, { title: 'Nothing described' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Nothing described' });
 
     // A mockup is generated FROM the specification. With nothing recorded the
     // model would invent the entire project.

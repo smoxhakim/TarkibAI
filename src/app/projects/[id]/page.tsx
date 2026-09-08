@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound as renderNotFound } from 'next/navigation';
 import { requireDbUser } from '@/lib/auth/current-user';
 import { ApiError } from '@/lib/http/api';
-import { getProject } from '@/lib/projects/service';
+import { getProject, hasProjectPermission } from '@/lib/projects/service';
 import { strings } from '@/lib/strings';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ProjectActions } from '@/components/ProjectActions';
@@ -50,6 +50,7 @@ import { getIntegrityReport } from '@/lib/validation/service';
 import { AuditPanel } from '@/components/AuditPanel';
 import { listProjectAudit } from '@/lib/audit/service';
 import { formatStockSize } from '@/lib/materials/format';
+import { asWorkspaceId } from '@/lib/workspaces/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,13 +94,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     getSpec(project.id, user.id),
     listFiles(project.id, user.id),
     listProjectMaterials(project.id, user.id),
-    listMaterials(user.id, { includeArchived: false }),
-    prisma.costSettings.findUnique({ where: { userId: user.id } }),
+    listMaterials(asWorkspaceId(project.workspaceId), { includeArchived: false }),
+    prisma.costSettings.findUnique({ where: { workspaceId: project.workspaceId } }),
   ]);
+  // A worker sees the project without the cost panel rather than an error.
+  const canSeeCost = await hasProjectPermission(project.id, user.id, 'cost.view');
+
   const [costView, expenses, sceneView, proposals, cuttingPieces, cuttingPlans] =
     await Promise.all([
-      getProjectCost(project.id, user.id),
-      listExpenses(project.id, user.id),
+      canSeeCost ? getProjectCost(project.id, user.id) : Promise.resolve(null),
+      canSeeCost ? listExpenses(project.id, user.id) : Promise.resolve([]),
       getScene(project.id, user.id),
       listProposals(project.id, user.id),
       listPieces(project.id, user.id),
@@ -339,6 +343,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           recommendations={efficiency.recommendations}
           emptyReason={efficiency.emptyReason}
         />
+        {canSeeCost && costView ? (
         <CostPanel
           projectId={project.id}
           currency={currency}
@@ -363,11 +368,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               : null
           }
         />
+        ) : null}
         <QuotesPanel
           projectId={project.id}
           currency={currency}
           costBlockedReason={
-            costView.cost
+            // Null when the reader cannot see costs at all: the quote panel
+            // then says nothing about the calculation rather than claiming it
+            // is missing.
+            costView === null || costView.cost
               ? null
               : (costView.blockedReason ??
                 'Calculate the project cost before quoting it. A quote is priced from the cost calculation.')

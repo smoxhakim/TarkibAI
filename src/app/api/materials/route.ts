@@ -3,6 +3,7 @@ import { requireDbUser } from '@/lib/auth/current-user';
 import { handleRoute, readJson } from '@/lib/http/api';
 import { createMaterialSchema, materialQuerySchema } from '@/lib/materials/schema';
 import { createMaterial, listMaterials } from '@/lib/materials/service';
+import { assertWorkspacePermission, resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 // GET /api/materials — the signed-in user's private library
 // ?search= &category= &measurementModel= &includeArchived=true
@@ -16,7 +17,8 @@ export async function GET(req: NextRequest) {
       measurementModel: params.get('measurementModel') ?? undefined,
       includeArchived: params.get('includeArchived') === 'true',
     });
-    return { materials: await listMaterials(user.id, query) };
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    return { materials: await listMaterials(workspaceId, query) };
   });
 }
 
@@ -25,6 +27,8 @@ export async function POST(req: NextRequest) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const input = createMaterialSchema.parse(await readJson(req));
-    return { material: await createMaterial(user.id, input) };
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    await assertWorkspacePermission(workspaceId, user.id, 'material.manage');
+    return { material: await createMaterial(workspaceId, user.id, input) };
   });
 }

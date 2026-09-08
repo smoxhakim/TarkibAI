@@ -2300,3 +2300,67 @@ instructions that are identical everywhere.
 **The trade is chosen at creation and not changed afterwards.** It decides which
 questions a project must answer before approval, and switching it under an
 approved specification would retroactively change what "approved" meant.
+
+### T18 — Workspaces and Permissions (Phase 18)
+
+**Ownership moved from a person to a business, at one gate.** Before T18
+`assertProjectAccess` compared `project.userId` to the caller. It now resolves
+the project's workspace and requires a membership row. The signature is
+unchanged on purpose: eighty-odd call sites inherited the new rule without each
+having to be reasoned about, which is the entire value of having had one gate.
+`Project.userId` and `Material.userId` survive as "who created this" and are
+never consulted for access again.
+
+**Everyone got a personal workspace, and nothing changed hands.** The migration
+is hand-written rather than generated, because the generated version would
+`ADD COLUMN ... NOT NULL` onto populated tables and drop the settings' owner
+link without moving what it pointed at. Every existing row lands in the personal
+workspace of the user who owned it, and a check afterwards confirmed zero
+mismatches. A personal workspace cannot be left or deleted, so there is no state
+in which somebody is signed in with nowhere to work.
+
+**The workspace id is a branded type, and that was not decoration.** Turning
+twenty-four call sites from "pass the user id" to "pass the workspace id" was a
+refactor in which every single site typechecked either way, and a mistake at any
+one of them reads another business's data or writes into it. `WorkspaceId` is a
+branded string that only `asWorkspaceId` can produce, so the compiler found all
+twenty-four and will find the twenty-fifth.
+
+**The permission matrix is written out per role, not derived.** Derivation by
+seniority reads neatly and hides the question that matters. Sales sees cost and
+cannot touch the canvas; production manages the material library and cannot see
+cost. Neither falls out of a hierarchy, and a test asserts each role's exact set
+so widening one is a deliberate edit rather than a diff nobody reads.
+
+**Cost visibility is enforced by refusing the read, not by filtering it.** A
+role without `cost.view` never receives the ProjectCost row at all, so an
+internal column added later cannot leak through a serialiser somebody forgot to
+update. Same construction as the client-safe quote boundary in T13, applied to a
+second audience.
+
+**Which forced three aggregators to degrade rather than fail.** The integrity
+report, the quote view and the project page all read cost. A worker opening a
+project must see the project minus the cost panel, not an error page, so they
+ask `hasProjectPermission` and omit the section. The alternative — catching a
+403 they provoked on purpose — hides real failures.
+
+**Missing and forbidden are both 404 ACROSS workspaces, and 403 within one.** A
+403 on another business's project would confirm the id is real and let anyone
+enumerate it. Inside a workspace you already know the project exists, so a 403
+naming the missing permission is safe and actionable.
+
+**Owner is an ownership check, not a permission.** An admin holds every entry in
+the matrix and still cannot promote itself or demote the owner, because a
+permission is something that can be granted and this is not. The workspace is
+also refused any transition that would leave it with no owner.
+
+**No invitation email is sent, and the interface says so.** There is no mail
+provider wired into the product, and pretending to deliver an invitation would
+leave one nobody receives. The token is returned and the inviter shares the
+link. Accepting requires the signed-in account's email to match the address
+invited — without that, a leaked link is a way into somebody's business, which
+is the whole risk of a token in a URL.
+
+**A revoked invitation is marked, not deleted.** Deleting would free the unique
+(workspace, email) slot and allow the same token to be recreated; a link already
+shared should stay dead.

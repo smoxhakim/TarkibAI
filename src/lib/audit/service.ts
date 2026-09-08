@@ -25,6 +25,13 @@ export const AUDIT_ACTIONS = [
   'material.archived',
   'material.deleted',
   'file.rejected',
+  // Who can reach a business's data is exactly the kind of change an audit
+  // trail exists for.
+  'workspace.created',
+  'workspace.invited',
+  'workspace.joined',
+  'workspace.role_changed',
+  'workspace.member_removed',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

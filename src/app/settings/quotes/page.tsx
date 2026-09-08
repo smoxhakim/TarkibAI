@@ -3,12 +3,14 @@ import { getQuoteSettings } from '@/lib/quotes/settings-service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { strings } from '@/lib/strings';
 import { QuoteSettingsForm } from '@/components/QuoteSettingsForm';
+import { resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 export const dynamic = 'force-dynamic';
 
 export default async function QuoteSettingsPage() {
   const user = await requireDbUser();
-  const settings = await getQuoteSettings(user.id);
+  const { workspaceId } = await resolveActiveWorkspace(user.id);
+  const settings = await getQuoteSettings(workspaceId);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">

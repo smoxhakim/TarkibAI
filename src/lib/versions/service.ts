@@ -76,7 +76,7 @@ export async function captureSnapshot(
       orderBy: { createdAt: 'asc' },
     }),
     db.projectCost.findFirst({ where: { projectId }, orderBy: { computedAt: 'desc' } }),
-    db.project.findUnique({ where: { id: projectId }, select: { userId: true } }),
+    db.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } }),
     db.diagram.findMany({ where: { projectId }, select: { version: true }, orderBy: { version: 'asc' } }),
     db.quote.findMany({
       where: { projectId, status: 'issued' },
@@ -135,7 +135,7 @@ export async function captureSnapshot(
           computedAt: costRow.computedAt.toISOString(),
           currency: projectRow
             ? (await db.costSettings.findUnique({
-                where: { userId: projectRow.userId },
+                where: { workspaceId: projectRow.workspaceId },
                 select: { currency: true },
               }))?.currency ?? null
             : null,

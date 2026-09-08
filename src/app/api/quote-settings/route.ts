@@ -3,12 +3,14 @@ import { requireDbUser } from '@/lib/auth/current-user';
 import { handleRoute, readJson } from '@/lib/http/api';
 import { quoteSettingsSchema } from '@/lib/quotes/schema';
 import { getQuoteSettings, updateQuoteSettings } from '@/lib/quotes/settings-service';
+import { assertWorkspacePermission, resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 // GET /api/quote-settings — the company identity printed on this user's quotes
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   return handleRoute(async () => {
     const user = await requireDbUser();
-    return { settings: await getQuoteSettings(user.id) };
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    return { settings: await getQuoteSettings(workspaceId) };
   });
 }
 
@@ -17,6 +19,8 @@ export async function PUT(req: NextRequest) {
   return handleRoute(async () => {
     const user = await requireDbUser();
     const input = quoteSettingsSchema.parse(await readJson(req));
-    return { settings: await updateQuoteSettings(user.id, input) };
+    const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
+    await assertWorkspacePermission(workspaceId, user.id, 'quote.create');
+    return { settings: await updateQuoteSettings(workspaceId, input) };
   });
 }

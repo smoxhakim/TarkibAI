@@ -17,10 +17,12 @@ import { runConversationTurn } from '@/lib/ai/conversation-service';
 import { getSpec } from '@/lib/spec/service';
 import { isAiConfigured } from '@/lib/ai/config';
 import { EVAL_CASES } from './cases';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const enabled = isAiConfigured();
 const suffix = `eval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let userId: string;
+let workspaceId: WorkspaceId;
 
 beforeAll(async () => {
   if (!enabled) return;
@@ -28,6 +30,7 @@ beforeAll(async () => {
     data: { clerkId: `eval-${suffix}`, email: `eval-${suffix}@example.test` },
   });
   userId = user.id;
+  workspaceId = asWorkspaceId((await ensurePersonalWorkspace(userId)).id);
 });
 
 afterAll(async () => {
@@ -42,7 +45,7 @@ describe.skipIf(!enabled)('Moroccan Darija intake', () => {
     it(
       testCase.name,
       async () => {
-        const project = await createProject(userId, { title: `eval: ${testCase.name}` });
+        const project = await createProject(workspaceId, userId, { title: `eval: ${testCase.name}` });
 
         let lastReply = '';
         for (const message of testCase.messages) {
@@ -76,7 +79,7 @@ describe.skipIf(!enabled)('Moroccan Darija intake', () => {
   it(
     'does not state a price when asked',
     async () => {
-      const project = await createProject(userId, { title: 'eval: price refusal' });
+      const project = await createProject(workspaceId, userId, { title: 'eval: price refusal' });
       const turn = await runConversationTurn(
         project.id,
         userId,

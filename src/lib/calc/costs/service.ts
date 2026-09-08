@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db';
+import type { WorkspaceId } from '@/lib/workspaces/access';
 import { badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
+import { asWorkspaceId } from '@/lib/workspaces/access';
 import type { CostSettings, ProjectCost } from '@/generated/prisma/client';
 import {
   asComponentType,
@@ -28,20 +30,20 @@ const DEFAULT_SETTINGS = {
   currency: 'MAD',
 } as const;
 
-export async function getCostSettings(userId: string): Promise<CostSettings> {
-  const existing = await prisma.costSettings.findUnique({ where: { userId } });
+export async function getCostSettings(workspaceId: WorkspaceId): Promise<CostSettings> {
+  const existing = await prisma.costSettings.findUnique({ where: { workspaceId } });
   if (existing) return existing;
-  return prisma.costSettings.create({ data: { userId, ...DEFAULT_SETTINGS } });
+  return prisma.costSettings.create({ data: { workspaceId, ...DEFAULT_SETTINGS } });
 }
 
 export async function updateCostSettings(
-  userId: string,
+  workspaceId: WorkspaceId,
   input: CostSettingsPayload
 ): Promise<CostSettings> {
   return prisma.costSettings.upsert({
-    where: { userId },
+    where: { workspaceId },
     update: input,
-    create: { userId, ...input },
+    create: { workspaceId, ...input },
   });
 }
 
@@ -50,7 +52,8 @@ export async function updateCostSettings(
 /* -------------------------------------------------------------------------- */
 
 export async function listExpenses(projectId: string, userId: string) {
-  await assertProjectAccess(projectId, userId);
+  // Expenses are internal cost inputs, so they follow cost visibility.
+  await assertProjectPermission(projectId, userId, 'cost.view');
   return prisma.projectExpense.findMany({ where: { projectId }, orderBy: { createdAt: 'asc' } });
 }
 
@@ -59,13 +62,13 @@ export async function addExpense(
   userId: string,
   input: { label: string; amountCents: number }
 ) {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'cost.view');
   await prisma.projectExpense.create({ data: { projectId, ...input } });
   return listExpenses(projectId, userId);
 }
 
 export async function removeExpense(projectId: string, userId: string, expenseId: string) {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'cost.view');
   const row = await prisma.projectExpense.findUnique({ where: { id: expenseId } });
   if (!row || row.projectId !== projectId) throw notFound('Expense');
   await prisma.projectExpense.delete({ where: { id: row.id } });
@@ -93,8 +96,18 @@ async function latestMaterialCalculation(projectId: string): Promise<Date | null
   return row?.calculatedAt ?? null;
 }
 
+/**
+ * The project's internal cost.
+ *
+ * Guarded by `cost.view`, and guarded by REFUSING rather than by redacting. A
+ * role without it — a worker on the floor, a production manager ordering
+ * material — never receives the row at all, so an internal column added later
+ * cannot leak through a serialiser somebody forgot to update. The same
+ * reasoning as the client-safe quote boundary, applied to a second audience
+ * (PRD 23: cost visibility is a permission).
+ */
 export async function getProjectCost(projectId: string, userId: string): Promise<CostView> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'cost.view');
 
   const [cost, materialsCalculatedAt] = await Promise.all([
     prisma.projectCost.findFirst({ where: { projectId }, orderBy: { computedAt: 'desc' } }),
@@ -132,7 +145,9 @@ export async function computeProjectCost(
   userId: string,
   manualOverrides?: { laborCents?: number; transportCents?: number; installCents?: number }
 ): Promise<ProjectCost> {
-  await assertProjectAccess(projectId, userId);
+  // Costing rules come from the workspace that owns the project, not from
+  // whoever happens to be signed in: two members must reach the same price.
+  const { project } = await assertProjectPermission(projectId, userId, 'cost.view');
 
   const materialLines = await prisma.projectMaterial.findMany({
     where: { projectId, calculatedAt: { not: null } },
@@ -152,7 +167,7 @@ export async function computeProjectCost(
   }, null);
 
   const [settings, expenses] = await Promise.all([
-    getCostSettings(userId),
+    getCostSettings(asWorkspaceId(project.workspaceId)),
     prisma.projectExpense.findMany({ where: { projectId } }),
   ]);
 

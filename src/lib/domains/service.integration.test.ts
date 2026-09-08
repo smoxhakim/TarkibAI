@@ -20,9 +20,11 @@ import { calculateProjectMaterials } from '@/lib/calc/materials/service';
 import { computeProjectCost, updateCostSettings } from '@/lib/calc/costs/service';
 import { getIntegrityReport } from '@/lib/validation/service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
+import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
 
 const suffix = `dom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let ownerId: string;
+let ownerWs: WorkspaceId;
 
 /** Everything both trades require, and nothing either does not. */
 const SHARED_SPEC: ProjectSpecPatch = {
@@ -39,7 +41,8 @@ beforeAll(async () => {
     data: { clerkId: `do-${suffix}`, email: `do-${suffix}@example.test` },
   });
   ownerId = owner.id;
-  await updateCostSettings(ownerId, {
+  ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
+  await updateCostSettings(ownerWs, {
     laborType: 'percent', laborBp: 3000, laborCents: 0,
     transportType: 'fixed', transportBp: 0, transportCents: 50_000,
     installType: 'percent', installBp: 1000, installCents: 0,
@@ -52,26 +55,26 @@ afterAll(async () => {
   await prisma.projectMaterial.deleteMany({ where: { material: { userId: ownerId } } });
   await prisma.project.deleteMany({ where: { userId: ownerId } });
   await prisma.material.deleteMany({ where: { userId: ownerId } });
-  await prisma.costSettings.deleteMany({ where: { userId: ownerId } });
+  await prisma.workspace.deleteMany({ where: { members: { some: { userId: ownerId } } } });
   await prisma.user.delete({ where: { id: ownerId } });
   await prisma.$disconnect();
 });
 
 describe('a project carries its trade', () => {
   it('defaults to signage, so nothing created before T17 changes', async () => {
-    const project = await createProject(ownerId, { title: 'Unspecified' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Unspecified' });
     expect(project.domain).toBe('signage');
   });
 
   it('records the trade it was created with', async () => {
-    const project = await createProject(ownerId, { title: 'Wardrobe', domain: 'joinery' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Wardrobe', domain: 'joinery' });
     expect(project.domain).toBe('joinery');
   });
 });
 
 describe('the trade decides what must be answered', () => {
   it('blocks a signage project until lighting is decided', async () => {
-    const project = await createProject(ownerId, { title: 'Sign', domain: 'signage' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Sign', domain: 'signage' });
     await updateDraftSpec(project.id, ownerId, SHARED_SPEC);
 
     const spec = await getSpec(project.id, ownerId);
@@ -80,7 +83,7 @@ describe('the trade decides what must be answered', () => {
   });
 
   it('approves the same specification for joinery, which does not ask about lighting', async () => {
-    const project = await createProject(ownerId, { title: 'Wardrobe', domain: 'joinery' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Wardrobe', domain: 'joinery' });
     await updateDraftSpec(project.id, ownerId, SHARED_SPEC);
 
     const spec = await getSpec(project.id, ownerId);
@@ -92,7 +95,7 @@ describe('the trade decides what must be answered', () => {
   });
 
   it('still requires what every engine downstream needs', async () => {
-    const project = await createProject(ownerId, { title: 'Vague', domain: 'joinery' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Vague', domain: 'joinery' });
     await updateDraftSpec(project.id, ownerId, { projectType: 'placard' });
 
     const spec = await getSpec(project.id, ownerId);
@@ -104,7 +107,7 @@ describe('the trade decides what must be answered', () => {
 
 describe('the trade decides what may be drawn', () => {
   it('refuses a canvas object the trade does not use', async () => {
-    const project = await createProject(ownerId, { title: 'Wardrobe', domain: 'joinery' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Wardrobe', domain: 'joinery' });
 
     await expect(
       applyCommands(project.id, ownerId, [
@@ -120,7 +123,7 @@ describe('the trade decides what may be drawn', () => {
   });
 
   it('accepts an object the trade does use', async () => {
-    const project = await createProject(ownerId, { title: 'Wardrobe', domain: 'joinery' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Wardrobe', domain: 'joinery' });
 
     const view = await applyCommands(project.id, ownerId, [
       {
@@ -135,7 +138,7 @@ describe('the trade decides what may be drawn', () => {
   });
 
   it('still allows a signage project its full palette', async () => {
-    const project = await createProject(ownerId, { title: 'Sign', domain: 'signage' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Sign', domain: 'signage' });
 
     const view = await applyCommands(project.id, ownerId, [
       {
@@ -155,10 +158,10 @@ describe('the trade decides what looks implausible', () => {
     // A 30 m run: an ordinary facade band, an unusually large wardrobe.
     const big = { ...SHARED_SPEC, dimensions: { width: 30, height: 2.2, unit: 'm' as const } };
 
-    const sign = await createProject(ownerId, { title: 'Long sign', domain: 'signage' });
+    const sign = await createProject(ownerWs, ownerId, { title: 'Long sign', domain: 'signage' });
     await updateDraftSpec(sign.id, ownerId, { ...big, lighting: { type: 'led' } });
 
-    const wardrobe = await createProject(ownerId, { title: 'Long run', domain: 'joinery' });
+    const wardrobe = await createProject(ownerWs, ownerId, { title: 'Long run', domain: 'joinery' });
     await updateDraftSpec(wardrobe.id, ownerId, big);
 
     const signCodes = (await getIntegrityReport(sign.id, ownerId)).findings.map((f) => f.code);
@@ -169,7 +172,7 @@ describe('the trade decides what looks implausible', () => {
   });
 
   it('names the trade in the note about long thin work', async () => {
-    const wardrobe = await createProject(ownerId, { title: 'Shelf run', domain: 'joinery' });
+    const wardrobe = await createProject(ownerWs, ownerId, { title: 'Shelf run', domain: 'joinery' });
     await updateDraftSpec(wardrobe.id, ownerId, {
       ...SHARED_SPEC,
       dimensions: { width: 12, height: 0.3, unit: 'm' },
@@ -184,11 +187,11 @@ describe('the trade decides what looks implausible', () => {
 
 describe('the engines below are trade-independent', () => {
   it('calculates, cuts and costs a joinery project unchanged', async () => {
-    const project = await createProject(ownerId, { title: 'Wardrobe', domain: 'joinery' });
+    const project = await createProject(ownerWs, ownerId, { title: 'Wardrobe', domain: 'joinery' });
     await updateDraftSpec(project.id, ownerId, SHARED_SPEC);
     await approveSpec(project.id, ownerId);
 
-    const material = await createMaterial(ownerId, {
+    const material = await createMaterial(ownerWs, ownerId, {
       name: `MDF-${Math.random()}`, category: 'Panel', customCategory: false,
       measurementModel: 'sheet', sheetWidthMm: 2440, sheetHeightMm: 1220,
       unitPriceCents: 30_000,

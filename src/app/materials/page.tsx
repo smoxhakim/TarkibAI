@@ -4,6 +4,7 @@ import { listCategories, listMaterials } from '@/lib/materials/service';
 import { materialQuerySchema, type MeasurementModel } from '@/lib/materials/schema';
 import { strings } from '@/lib/strings';
 import { MaterialLibrary } from '@/components/MaterialLibrary';
+import { resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ export default async function MaterialsPage({
     category?: string;
     measurementModel?: string;
     archived?: string;
+    workspace?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -30,10 +32,11 @@ export default async function MaterialsPage({
     includeArchived: showArchived,
   });
 
+  const { workspaceId } = await resolveActiveWorkspace(user.id, params.workspace || null);
   const [materials, categories, costSettings] = await Promise.all([
-    listMaterials(user.id, query),
-    listCategories(user.id),
-    prisma.costSettings.findUnique({ where: { userId: user.id } }),
+    listMaterials(workspaceId, query),
+    listCategories(workspaceId),
+    prisma.costSettings.findUnique({ where: { workspaceId } }),
   ]);
 
   return (

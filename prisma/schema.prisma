@@ -25,20 +25,23 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  projects      Project[]
-  materials     Material[]
-  auditEvents   AuditEvent[]
-  costSettings  CostSettings?
-  quoteSettings QuoteSettings?
-  quotes        Quote[]
+  projects    Project[]
+  materials   Material[]
+  auditEvents AuditEvent[]
+  quotes      Quote[]
+  memberships WorkspaceMember[]
+  sentInvites WorkspaceInvitation[]
 }
 
 /// A user's private costing rules. These are business secrets: they determine
 /// margin and never appear on anything a client sees.
 model CostSettings {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  id String @id @default(uuid())
+
+  /// Costing rules belong to the business, not to a person. Two members of the
+  /// same workspace quoting the same project must reach the same price.
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   /// percent | fixed. "percent" reads the matching *Bp field as basis points
   /// applied to the MATERIAL cost; "fixed" reads the *Cents field.
@@ -68,9 +71,11 @@ model CostSettings {
 /// A user's quotation identity and defaults. Everything here is printed on a
 /// client-facing document, so nothing private belongs on this model.
 model QuoteSettings {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  id String @id @default(uuid())
+
+  /// The company block a client sees. One per business, not one per member.
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   /// Company block printed at the head of every quote. Seeded from
   /// User.companyName the first time the row is created, then authoritative:
@@ -102,10 +107,19 @@ model QuoteSettings {
 }
 
 model Project {
-  id     String @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Who owns this project. Access is decided by membership of this workspace
+  /// and nothing else (T18) — `userId` below records who created it, and is
+  /// never consulted for authorization.
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  /// Creator. Kept for the audit trail and for "created by" in listings.
   userId String
   user   User   @relation(fields: [userId], references: [id])
-  title  String
+
+  title String
 
   /// The fabrication trade this project belongs to (src/lib/domains).
   ///
@@ -263,9 +277,17 @@ model ProjectVersion {
 }
 
 model Material {
-  id             String  @id @default(uuid())
-  userId         String
-  user           User    @relation(fields: [userId], references: [id])
+  id String @id @default(uuid())
+
+  /// The library is shared across the workspace: a business has one set of
+  /// stock sizes and prices, not one per member.
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  /// Creator, for the same reason as on Project.
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
   name           String
   category       String
   customCategory Boolean @default(false)
@@ -730,8 +752,13 @@ model Quote {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  /// Quote numbers run per business, not per project, which is why the user is
-  /// referenced directly rather than reached through the project.
+  /// Quote numbers run per BUSINESS, not per project and not per person. Two
+  /// members issuing quotes on the same day must not both produce Q-2026-0001,
+  /// so the sequence is unique against the workspace (T18).
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  /// Who issued it. Recorded, never used for numbering or for access.
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
@@ -787,8 +814,8 @@ model Quote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, sequence])
-  @@unique([userId, number])
+  @@unique([workspaceId, sequence])
+  @@unique([workspaceId, number])
   @@index([projectId, createdAt])
 }
 
@@ -854,4 +881,89 @@ model AuditEvent {
 
   @@index([projectId, createdAt])
   @@index([userId, createdAt])
+}
+
+/// A business. Everything a business owns hangs off one of these: projects, the
+/// material library, costing rules and the company block on a quote.
+///
+/// Every user gets a personal workspace when their account is created, so a
+/// single-person business is a workspace of one and behaves exactly as the
+/// product did before T18. There is no "no workspace" state.
+model Workspace {
+  id   String @id @default(uuid())
+  name String
+
+  /// The workspace created automatically for one user. It cannot be left or
+  /// deleted, because doing so would leave that user with nowhere to work.
+  personal Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members     WorkspaceMember[]
+  invitations WorkspaceInvitation[]
+  projects    Project[]
+  materials   Material[]
+  quotes      Quote[]
+
+  costSettings  CostSettings?
+  quoteSettings QuoteSettings?
+}
+
+/// One person's role in one workspace.
+///
+/// This row IS the authorization. `assertProjectAccess` resolves a project to
+/// its workspace and then to this row; there is no other path, and no service
+/// compares a userId to a resource's owner any more.
+model WorkspaceMember {
+  id String @id @default(uuid())
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// owner | admin | designer | sales | production | worker
+  /// See src/lib/workspaces/permissions.ts — the matrix is the policy.
+  role String @default("worker")
+
+  createdAt DateTime @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+/// An invitation to join a workspace, addressed to an email.
+///
+/// Addressed to an email rather than a user because the person may not have an
+/// account yet — users are created lazily from the identity provider on first
+/// sign-in. The token is what the invited person presents; no email is sent,
+/// because no mail provider is wired yet, so the inviter shares the link.
+model WorkspaceInvitation {
+  id String @id @default(uuid())
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  email String
+  role  String @default("worker")
+
+  /// Presented by the invitee. Unique across all workspaces, and long enough
+  /// that guessing one is not a way in.
+  token String @unique
+
+  invitedByUserId String
+  invitedBy       User   @relation(fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  /// Set when an invitation is withdrawn, so a revoked token stays refused
+  /// rather than being deleted and becoming reusable.
+  revokedAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId, createdAt])
 }

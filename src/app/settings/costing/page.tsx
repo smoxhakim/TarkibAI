@@ -2,12 +2,14 @@ import { requireDbUser } from '@/lib/auth/current-user';
 import { getCostSettings } from '@/lib/calc/costs/service';
 import { strings } from '@/lib/strings';
 import { CostSettingsForm } from '@/components/CostSettingsForm';
+import { resolveActiveWorkspace } from '@/lib/workspaces/access';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CostSettingsPage() {
   const user = await requireDbUser();
-  const settings = await getCostSettings(user.id);
+  const { workspaceId } = await resolveActiveWorkspace(user.id);
+  const settings = await getCostSettings(workspaceId);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
