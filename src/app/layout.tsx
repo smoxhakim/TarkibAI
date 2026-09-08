@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
-import Link from 'next/link';
+import { ClerkProvider } from '@clerk/nextjs';
 import { strings } from '@/lib/strings';
 import './globals.css';
 
@@ -9,64 +8,20 @@ export const metadata = {
   description: strings.app.tagline,
 };
 
+/**
+ * The document shell, and nothing else.
+ *
+ * The product header lives in the `(app)` route group rather than here, because
+ * `/share/*` is a page a CLIENT sees. Showing them TARKIB's own name and a
+ * "Get started" button turns a business's proposal into somebody else's
+ * marketing surface — and the client is not our user, they are our user's
+ * customer.
+ */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className="min-h-dvh bg-surface text-ink">
-          <header className="border-b border-line">
-            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-              <Link href="/" className="text-lg font-semibold tracking-tight">
-                {strings.app.name}
-              </Link>
-              <nav className="flex items-center gap-3 text-sm">
-                <Show when="signed-in">
-                  <Link href="/dashboard" className="text-ink-muted transition-colors hover:text-ink">
-                    {strings.nav.dashboard}
-                  </Link>
-                  <Link href="/materials" className="text-ink-muted transition-colors hover:text-ink">
-                    {strings.materials.navLink}
-                  </Link>
-                  <Link
-                    href="/workspace"
-                    className="text-ink-muted transition-colors hover:text-ink"
-                  >
-                    {strings.workspaces.navLink}
-                  </Link>
-                  <Link
-                    href="/settings/costing"
-                    className="text-ink-muted transition-colors hover:text-ink"
-                  >
-                    {strings.costSettings.navLink}
-                  </Link>
-                  <Link
-                    href="/settings/quotes"
-                    className="text-ink-muted transition-colors hover:text-ink"
-                  >
-                    {strings.quoteSettings.navLink}
-                  </Link>
-                  <UserButton />
-                </Show>
-                <Show when="signed-out">
-                  <SignInButton mode="modal">
-                    <button type="button" className="text-ink-muted transition-colors hover:text-ink">
-                      {strings.nav.signIn}
-                    </button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <button
-                      type="button"
-                      className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-ink transition-opacity hover:opacity-90"
-                    >
-                      {strings.nav.signUp}
-                    </button>
-                  </SignUpButton>
-                </Show>
-              </nav>
-            </div>
-          </header>
-          {children}
-        </body>
+        <body className="min-h-dvh bg-surface text-ink">{children}</body>
       </html>
     </ClerkProvider>
   );

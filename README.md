@@ -308,6 +308,7 @@ src/
     production/           # workshop package: spec readers, assembly, template
     versions/             # project snapshots, deterministic diff, restore
     workspaces/           # membership, roles, permissions, invitations
+    collaboration/        # client share links, the project thread, notifications
     domains/              # trade profiles: required fields, palette, bounds, prompt
     validation/           # integrity checks, document gates, content sniffing
     audit/                # append-only record of consequential actions
@@ -678,7 +679,24 @@ Invitations are by email, with no email sent — the product has no mail provide
 yet, so the link is handed to the inviter to pass on, and the interface says so.
 Accepting requires the signed-in account to be the one invited.
 
-**Next: T19 — Collaboration (Phase 19)**
+T19 adds: client sharing and the project conversation. A revocable, optionally
+expiring link gives a client a read-only page showing the project, the issued
+quote, the visuals and the conversation — and nothing else. They can approve,
+ask for changes, or just reply, and the team is notified in the app.
+
+The share is the only unauthenticated surface in the product, so it is built
+assuming the link has been forwarded to somebody the sender never intended: the
+payload is client-safe by construction, carries no internal figure and no
+internal id, shows members as the business rather than by name, and reports
+unknown, revoked and expired links identically so a token cannot be probed.
+
+The client page deliberately carries none of TARKIB's own chrome — it is the
+business's document, and their client is not our user.
+
+No email is sent for shares or invitations. There is no mail provider yet, so
+the link is handed back to the sender and the interface says so plainly.
+
+**Next: T20 — Commercial and Operational Features (Phase 20)**
 
 Not yet implemented. Nothing in the product returns a fabricated number or a
 mocked AI reply.

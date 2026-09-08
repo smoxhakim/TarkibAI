@@ -679,18 +679,49 @@ This phase must be designed as a deliberate workspace architecture, not retrofit
 
 # Phase 19 — Collaboration
 
-## T19 — Client and Team Collaboration
+## T19 — Client and Team Collaboration ✅ COMPLETE
 
-Potential future capabilities:
+The only milestone whose brief was "potential future capabilities" with no
+definition of done, so the scope below was chosen deliberately rather than read
+off a list. What ties it together: one link a client can open, one thread both
+sides write in, and nothing internal reachable from either.
 
-- [ ] Share project
-- [ ] Client review
-- [ ] Client approval
-- [ ] Comments
-- [ ] Revision requests
-- [ ] Team notifications
-- [ ] Document sharing
-- [ ] Collaborative workflows
+- [x] Share project (`ProjectShare` — scoped, revocable, optionally expiring)
+- [x] Client review (a public page needing no account)
+- [x] Client approval (recorded as a named message, not a status flag)
+- [x] Comments (one thread carrying team and client messages)
+- [x] Revision requests (a typed entry in the same thread)
+- [x] Team notifications (in-app; no email, and the interface says so)
+- [x] Document sharing (the issued quote, via a short-lived signed URL)
+- [x] Collaborative workflows — the approve / request-changes / reply loop
+- [x] `ShareView` + `assertShareSafe`: the third client-safe boundary
+- [x] `(app)` route group so the client page carries no product chrome
+- [x] Tests (18 integration, including leak and token-probing tests)
+- [x] Verified live: the share page and API serve with no session while
+      `/dashboard` still redirects, and the approval loop was driven end to end
+      in a browser
+
+### Deferred out of T19 (deliberately)
+
+- [ ] Emailing a share link — no mail provider (`resend` is still deferred).
+      The link is handed to the sender, and the UI says nothing was sent.
+- [ ] @mentions — needs a member picker and parsing; the thread notifies the
+      whole workspace today, which is honest for a small business
+- [ ] Client comments on a specific line, drawing or region — the thread is
+      per project
+- [ ] Editing or deleting a posted message — the thread is a record, and a
+      client's approval in particular should not be editable after the fact
+- [ ] Per-share passcodes or client accounts — a longer credential and an
+      expiry were judged the right trade for a link somebody has to be able to
+      open from an email on a phone
+- [ ] Realtime updates — the thread refreshes on navigation
+- [ ] Notification preferences and digests — there is one channel to configure
+
+### Definition of done (chosen for this milestone)
+
+A user can send a client a link that shows the project, the quote and the
+visuals without exposing anything internal; the client can approve or ask for
+changes; the team sees it in the app; and the link can be withdrawn. ✅
 
 ---
 
@@ -798,14 +829,35 @@ Completed:
 - [x] **T16 — Validation and Safety Layer** (Phase 16)
 - [x] **T17 — Domain Framework** (Phase 17)
 - [x] **T18 — Teams and Permissions** (Phase 18)
+- [x] **T19 — Client and Team Collaboration** (Phase 19)
 
 Active milestone:
 
-- [ ] None. T19 has not been started.
+- [ ] None. T20 has not been started.
 
 Next milestone:
 
-- [ ] **T19 — Collaboration** (Phase 19)
+- [ ] **T20 — Commercial and Operational Features** (Phase 20)
+
+### T19 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 471 passed |
+| Integration tests | 288 passed against Neon |
+| Production build | passed, 77 routes |
+| Migrations | 23 applied |
+| Auth boundary | verified live: `/share/<token>` and `/api/share/<token>` return 200 with no session; `/dashboard` still 307s to sign-in; an unknown token 404s |
+| Leak tests | a costed project with a supplier on record, shared: no internal amount, no supplier, no project/workspace/user id, no member email |
+| Token probing | unknown, revoked and expired links return the same status and the same message |
+| Client loop | driven end to end in a browser: approve → confirmation, message in the thread, notification delivered to the team |
+
+**A real defect was found by looking at the client page.** It rendered inside
+the root layout, so a client opening their supplier's proposal saw TARKIB's
+name, a "Sign in" link and a "Get started" button. The header moved into an
+`(app)` route group; the share page also sets its own title and `noindex`.
 
 ### T18 verification record
 

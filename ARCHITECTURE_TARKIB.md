@@ -2364,3 +2364,61 @@ is the whole risk of a token in a URL.
 **A revoked invitation is marked, not deleted.** Deleting would free the unique
 (workspace, email) slot and allow the same token to be recreated; a link already
 shared should stay dead.
+
+### T19 — Client and Team Collaboration (Phase 19)
+
+**The share is the product's only unauthenticated read surface**, so it is
+built assuming the link has already been forwarded to somebody the sender never
+intended. The token is the whole credential: there is no second check behind
+it, which is why the payload has to be safe on its own rather than safe because
+of who is reading it.
+
+**Third client-safe boundary, same construction as the first two.** A quote
+hides internal cost from a document (T13); a package hides prices from the
+workshop (T14); `ShareView` hides everything internal from somebody outside the
+business entirely. Absent by construction: cost, margin, purchase prices,
+supplier names, quantities, waste, cutting plans, the production package, the
+audit trail, version history, and workspace membership.
+
+**Ids are private too.** A share carries no project id, workspace id or user id.
+Handing an outside reader an internal identifier invites them to try it
+somewhere else, and none of them is needed to render the page.
+
+**Members appear to a client as the business, never by name.** The client is
+dealing with a company; which colleague replied is not theirs to have, and an
+email address in a shared thread is a leak with no upside.
+
+**Every dead link fails identically.** Unknown, revoked and expired all report
+that the link does not work, in the same words. Distinguishing them would tell
+somebody probing tokens which of their guesses had once been real.
+
+**A revoked share is marked, not deleted.** Deleting would free the token and
+also detach the client messages that arrived through it, which are part of the
+project's record.
+
+**An approval is a message, not a flag.** It is recorded as something a named
+person said at a time, in the same thread as the team's replies. A project
+marked "approved" with nobody attached is not evidence of anything, and a
+revision request and the answer to it belong next to each other rather than in
+two places somebody has to reconcile.
+
+**The client-facing page has no product chrome, and that was a defect found by
+looking at it.** The share page originally rendered inside the root layout, so a
+client opening their supplier's proposal saw TARKIB's name, a "Sign in" link and
+a "Get started" button — a business's document turned into somebody else's
+marketing surface. The header moved into an `(app)` route group; the root layout
+is now the document shell only. The share page also sets its own title and
+`robots: noindex`, because a client's browser tab should carry their supplier's
+name and a client link has no business in a search index.
+
+**Notifications are in-app only, and the interface says so.** No mail provider
+is wired into the product. A notification nobody receives is worse than one the
+user has to come back and read, and an invitation or share that claims to have
+been emailed is worse still — so both hand the link back to the sender instead.
+
+**Writing a notification never fails the thing it was about**, the same rule the
+audit trail and version capture follow.
+
+**Marking notifications read is scoped to the caller's own rows**, so an id from
+somewhere else does nothing rather than being rejected — there is no version of
+this where one user changes another's state.

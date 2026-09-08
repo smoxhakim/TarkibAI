@@ -32,6 +32,10 @@ export const AUDIT_ACTIONS = [
   'workspace.joined',
   'workspace.role_changed',
   'workspace.member_removed',
+  // Giving somebody outside the business a view of a project, and taking it
+  // away again, is exactly the kind of change worth being able to look up.
+  'share.created',
+  'share.revoked',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

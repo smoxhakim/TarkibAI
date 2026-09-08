@@ -25,6 +25,9 @@ import { DesignProposalsPanel } from '@/components/DesignProposalsPanel';
 import { listProposals } from '@/lib/design/service';
 import { CuttingPlanPanel } from '@/components/CuttingPlanPanel';
 import { getDomain } from '@/lib/domains/registry';
+import { SharePanel } from '@/components/SharePanel';
+import { CommentsPanel } from '@/components/CommentsPanel';
+import { listComments, listShares } from '@/lib/collaboration/service';
 import {
   listLinearCuts,
   listLinearPlans,
@@ -99,6 +102,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   // A worker sees the project without the cost panel rather than an error.
   const canSeeCost = await hasProjectPermission(project.id, user.id, 'cost.view');
+  const [canShare, canComment] = await Promise.all([
+    hasProjectPermission(project.id, user.id, 'quote.create'),
+    hasProjectPermission(project.id, user.id, 'project.edit'),
+  ]);
+  const [shares, comments] = await Promise.all([
+    listShares(project.id, user.id),
+    listComments(project.id, user.id),
+  ]);
 
   const [costView, expenses, sceneView, proposals, cuttingPieces, cuttingPlans] =
     await Promise.all([
@@ -452,6 +463,39 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             createdAt: version.createdAt.toISOString(),
             producedQuoteNumbers: version.producedQuoteNumbers,
             producedPackageVersions: version.producedPackageVersions,
+          }))}
+        />
+        <SharePanel
+          projectId={project.id}
+          canShare={canShare}
+          shares={shares.map((share) => ({
+            id: share.id,
+            path: share.path,
+            label: share.label,
+            active: share.active,
+            revoked: share.revokedAt !== null,
+            expiresAt: share.expiresAt?.toISOString() ?? null,
+            viewCount: share.viewCount,
+            lastViewedAt: share.lastViewedAt?.toISOString() ?? null,
+            includeQuote: share.includeQuote,
+            includeMockups: share.includeMockups,
+            includeDrawings: share.includeDrawings,
+            allowResponses: share.allowResponses,
+          }))}
+        />
+        <CommentsPanel
+          projectId={project.id}
+          canPost={canComment}
+          comments={comments.map((comment) => ({
+            id: comment.id,
+            author:
+              comment.authorKind === 'client'
+                ? comment.authorName ?? 'Client'
+                : comment.authorUser?.name ?? comment.authorUser?.email ?? 'A colleague',
+            fromClient: comment.authorKind === 'client',
+            kind: comment.kind,
+            body: comment.body,
+            createdAt: comment.createdAt.toISOString(),
           }))}
         />
         <AuditPanel

@@ -25,12 +25,15 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  projects    Project[]
-  materials   Material[]
-  auditEvents AuditEvent[]
-  quotes      Quote[]
-  memberships WorkspaceMember[]
-  sentInvites WorkspaceInvitation[]
+  projects        Project[]
+  materials       Material[]
+  auditEvents     AuditEvent[]
+  quotes          Quote[]
+  memberships     WorkspaceMember[]
+  sentInvites     WorkspaceInvitation[]
+  projectShares   ProjectShare[]
+  projectComments ProjectComment[]
+  notifications   Notification[]
 }
 
 /// A user's private costing rules. These are business secrets: they determine
@@ -155,6 +158,9 @@ model Project {
   documents        Document[]
   quotes           Quote[]
   auditEvents      AuditEvent[]
+  shares           ProjectShare[]
+  comments         ProjectComment[]
+  notifications    Notification[]
   projectExpenses  ProjectExpense[]
   canvasScene      CanvasScene?
   designProposals  DesignProposal[]
@@ -966,4 +972,116 @@ model WorkspaceInvitation {
 
   @@unique([workspaceId, email])
   @@index([workspaceId, createdAt])
+}
+
+/// A read-only link giving a client a view of one project.
+///
+/// The client is NOT a workspace member and never becomes one. The link is the
+/// whole credential, which is why it is long, revocable, optionally expiring,
+/// and scoped: each flag says what the client may see, and the payload built
+/// for them has no field for anything else.
+///
+/// Nothing behind a share exposes internal cost, margin, purchase prices,
+/// supplier names or the production package. That is enforced by the shape of
+/// the payload rather than by filtering, the same construction as the
+/// client-safe quote boundary in T13.
+model ProjectShare {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// The credential. Long enough that guessing one is not a way in.
+  token String @unique
+
+  /// A note for the team about who it was sent to. Never shown to the client.
+  label String?
+
+  /// What this link includes. Each is a deliberate decision by the sender, and
+  /// there is no flag for anything internal because no such view exists.
+  includeQuote    Boolean @default(true)
+  includeMockups  Boolean @default(true)
+  includeDrawings Boolean @default(false)
+
+  /// Whether the client may approve or request changes, or only look.
+  allowResponses Boolean @default(true)
+
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime?
+  /// Withdrawn rather than deleted, so a link already sent stays refused
+  /// instead of the token becoming reusable.
+  revokedAt DateTime?
+
+  /// Light usage signal for the sender: was it opened, and when last.
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+
+  createdAt DateTime         @default(now())
+  comments  ProjectComment[]
+
+  @@index([projectId, createdAt])
+}
+
+/// One entry in a project's conversation with its team and its client.
+///
+/// Team messages and client messages share a thread on purpose: a revision
+/// request and the reply to it belong next to each other, not in two places
+/// that have to be reconciled by whoever reads them.
+model ProjectComment {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// member | client
+  authorKind String
+
+  /// Set for a member. Null for a client, who has no account.
+  authorUserId String?
+  authorUser   User?   @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  /// Set for a client, recording which link the message arrived through.
+  shareId String?
+  share   ProjectShare? @relation(fields: [shareId], references: [id], onDelete: SetNull)
+
+  /// The name the client gave, so a reply is addressed to somebody.
+  authorName String?
+
+  /// comment | approval | revision_request
+  ///
+  /// A client's approval is recorded here rather than as a status on the
+  /// project: it is something a person said, with a time and a name attached,
+  /// and flattening it into a boolean would lose who said it and when.
+  kind String @default("comment")
+
+  body String
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+/// An in-app notification for one member.
+///
+/// In-app only. No email is sent, because no mail provider is wired into the
+/// product — see the deferred dependencies in README. A notification nobody can
+/// receive would be worse than one the user has to come back and read.
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// client.approved | client.requested_changes | client.commented |
+  /// comment.posted | share.viewed
+  kind String
+
+  summary String
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
 }
