@@ -852,10 +852,11 @@ expected to make money — with every figure labelled for what it actually is. �
 
 ### Pre-existing gaps found during the audit, left for their own task
 
-- [ ] `getRecommendations`, `listProjectMaterials` and `listQuotes` are guarded
+- [x] `getRecommendations`, `listProjectMaterials` and `listQuotes` are guarded
       by project access only, so the project page's efficiency and material
       panels — and `/api/projects/:id/recommendations` — show prices to roles
-      without `cost.view`. The AI surface no longer does.
+      without `cost.view`. **Closed by the cost-visibility hardening task**; see
+      below.
 - [ ] `createProposal`, `approveProposal` and `updateDraftSpec` check project
       access but not `design.edit` / `project.edit`, so the design-proposal
       routes accept decisions from roles the matrix excludes. The AI tools that
@@ -948,6 +949,38 @@ Active milestone:
 Next milestone:
 
 - [ ] Not yet decided.
+
+### Security hardening — cost visibility boundary
+
+Not a milestone. Closes the first of the two pre-existing gaps the T21 audit
+found. `cost.view` is now enforced in the services that return internal money,
+so the routes, the pages and the AI tools all inherit one answer.
+
+- [x] `listProjectMaterials` withholds `unitPriceCents`,
+      `unitPriceCentsSnapshot` and `totalCostCents`; quantities, waste and the
+      calculation steps are untouched
+- [x] `getRecommendations` withholds `savingCents` and both `totalCostCents`,
+      and rebuilds the summary sentence without the money
+- [x] `listQuotes` and `loadQuote` require `quote.view` — the permission the
+      repository's own contract assigns to a quote's figures, not `cost.view`
+- [x] `ProjectMaterialView.unitPriceCents` is `number | null`, so a consumer
+      that would render a withheld price is a build error
+- [x] The T21 AI-layer redaction removed; the tools forward what the services
+      return, keeping one definition of what counts as money
+- [x] `ProjectMaterialsPanel`, `ProjectMaterialRow` and `EfficiencyPanel` say
+      prices are not shown for the role instead of printing a fabricated zero
+- [x] `QuotesPanel` is absent, and the quotes are never fetched, without
+      `quote.view`
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 558 passed |
+| Integration tests | 364 passed against Neon (327 before, 37 added) |
+| Production build | passed, 84 routes |
+| Role coverage | all six roles, split by the matrix rather than hardcoded |
+| Boundary proof | asserted on the returned payload — the unit price does not appear as a value anywhere in it, at any depth |
 
 ### T21 verification record
 

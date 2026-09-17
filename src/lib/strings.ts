@@ -186,6 +186,7 @@ export const strings = {
     summaryUnsupported: 'unsupported',
     totalMaterialCost: 'Total material cost',
     internalOnly: 'Internal cost — never shown on a client document.',
+    noPrices: 'Costs are not shown for your role. The quantities and waste are what you need.',
   },
   cutting: {
     title: 'Cutting plan',
@@ -272,6 +273,7 @@ export const strings = {
     liveLabel: 'Live — always current',
   },
   efficiency: {
+    noPrices: 'Savings are not shown for your role. Fewer units and less waste are what you can act on.',
     title: 'Material savings',
     subtitle: 'Cheaper options from your own library, calculated by re-running the cutting engines — not estimated.',
     none: 'No cheaper option found.',

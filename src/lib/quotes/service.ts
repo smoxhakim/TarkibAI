@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
 import {
-  assertProjectAccess,
   assertProjectPermission,
   hasProjectPermission,
 } from '@/lib/projects/service';
@@ -46,16 +45,31 @@ export type QuoteView = {
 const withLines = { lines: { orderBy: { position: 'asc' } } } as const;
 
 /**
- * Loads a quote and proves the caller owns the project behind it.
+ * Loads a quote and proves the caller may read quotations on that project.
  *
  * Ownership is checked through the project rather than through `Quote.userId`,
  * so quotes go through the same single chokepoint as everything else and a
  * missing quote is indistinguishable from someone else's.
+ *
+ * # Why `quote.view` and not `cost.view`
+ *
+ * The two guard different things, and this file already says which is which:
+ * `getQuoteView` reads `cost.view` to decide whether to show the comparison
+ * against the INTERNAL calculation, and its comment names a production manager
+ * as somebody who "may read quotes but not costs". So a quote's own figures —
+ * subtotal, tax, total, the line prices a client will be sent — are governed by
+ * `quote.view`, and `cost.view` governs what the business paid. Enforcing
+ * `cost.view` here would take quotes away from the production role that the
+ * matrix deliberately grants them to.
+ *
+ * Refused rather than degraded, unlike the material list: a quote stripped of
+ * its totals is not a quote. There is no useful non-financial residue, and
+ * `quote.view` exists precisely to say who may read one.
  */
 async function loadQuote(quoteId: string, userId: string): Promise<QuoteWithLines> {
   const quote = await prisma.quote.findUnique({ where: { id: quoteId }, include: withLines });
   if (!quote) throw notFound('Quote');
-  await assertProjectAccess(quote.projectId, userId);
+  await assertProjectPermission(quote.projectId, userId, 'quote.view');
   return quote;
 }
 
@@ -68,8 +82,9 @@ async function quoteWorkspace(quote: { projectId: string }): Promise<WorkspaceId
   return asWorkspaceId(project.workspaceId);
 }
 
+/** Every quote on the project. Guarded by `quote.view`, like reading one. */
 export async function listQuotes(projectId: string, userId: string): Promise<QuoteWithLines[]> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'quote.view');
   return prisma.quote.findMany({
     where: { projectId },
     include: withLines,

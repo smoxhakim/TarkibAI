@@ -951,6 +951,52 @@ This prevents accidental leakage of:
 - Internal expenses
 - Profit margin
 
+### Cost visibility is a permission, enforced in the service
+
+The client-safe serializer above answers "what may leave the business". A
+second question sits inside it — which MEMBERS of the business may see an
+internal figure — and the answer is the `cost.view` permission (T18).
+
+It is enforced in the SERVICE that reads the figure, never in the route and
+never in the component. A permission checked in a panel is a permission the
+API still answers, and the reader only has to call it directly. So:
+
+| Service | Rule | Why |
+| --- | --- | --- |
+| `getProjectCost`, `computeProjectCost`, expenses | **refuse** | every field is financial; there is nothing left to return |
+| `getProjectProfitability` | **refuse** | the margin, arrived at by subtraction |
+| `listProjectMaterials` | **withhold the money** | quantities are not costs: production orders the sheets and a worker cuts them |
+| `getRecommendations` | **withhold the money** | fewer units and less waste are actionable without the price |
+| `getPurchasePlan` | **withhold the money** | the order quantities are what production needs |
+| `getIntegrityReport` | **omit the cost section** | the rest of the report is still theirs |
+| `listQuotes`, `loadQuote` | **refuse**, on `quote.view` | see below |
+
+Where a service withholds rather than refuses, the monetary fields come back
+`null` and their TYPE says so, so a consumer cannot render a figure it was not
+given without the compiler objecting. The view is assembled field by field from
+the row, so a monetary column added to the schema later cannot reach a caller
+until somebody adds it to that list deliberately.
+
+Withholding is decided once, in the service. The AI tools, the HTTP routes and
+the server components all inherit the same answer rather than each carrying
+their own idea of what counts as money.
+
+### Quotes are guarded by `quote.view`, not by `cost.view`
+
+The two permissions protect different things and the distinction is deliberate:
+
+- A quote's OWN figures — subtotal, tax, total, the line prices a client will be
+  sent — are a client-facing price. They are guarded by `quote.view`, which the
+  matrix grants to the production role.
+- What the business PAID, and the comparison between the two, is internal.
+  `getQuoteView` reads `cost.view` to decide whether to include
+  `calculatedSubtotalCents`; a production manager sees the quote and not the
+  calculation it is measured against.
+
+Guarding quotes with `cost.view` would take them away from a role the matrix
+deliberately grants them to; guarding them with project access alone gave them
+to designers and workers, who hold neither permission.
+
 ---
 
 ## 16. Document Architecture
@@ -1154,6 +1200,12 @@ Rules:
 - Secret values server-side only
 
 AI tool calls must pass through the same authorization checks as normal APIs.
+
+Authorization lives in the SERVICE, not in the route, the component or the AI
+toolbox. Each of those is one caller among several, and a check placed in one of
+them is absent from the others — the gap that let internal prices reach roles
+without `cost.view` through the project page and the recommendations API while
+the AI surface was already refusing them. See §15.
 
 Do not allow the model to:
 
@@ -2692,3 +2744,44 @@ than the AI layer now is, and both are outside this milestone:
   but not `design.edit` / `project.edit`, so the design-proposal routes accept
   decisions from roles the matrix excludes. The AI tools that reach them now
   assert the permission themselves.
+
+### Security hardening — the cost visibility boundary
+
+Found during the T21 audit, fixed as its own task. Three services returned
+internal financial figures after checking only that the caller could see the
+project:
+
+| Service | What leaked | To whom |
+| --- | --- | --- |
+| `listProjectMaterials` | `unitPriceCents`, `unitPriceCentsSnapshot`, `totalCostCents` | designer, production, worker |
+| `getRecommendations` | `savingCents`, both `totalCostCents`, and a summary sentence quoting both | designer, production, worker |
+| `listQuotes` / `loadQuote` | `subtotalCents`, `taxCents`, `totalCents`, line prices | designer, worker |
+
+**The root cause was the location of the check, not a missing rule.** The rule
+existed and was correct — `cost.view` has guarded the cost service since T18,
+and `getPurchasePlan` and `getIntegrityReport` already degraded properly. What
+was missing was the check in these three services, so the project page fetched
+the figures and the panels rendered them, and the API routes behind them
+answered anyone who asked. The efficiency panel in particular was the only
+money-bearing panel on the project page NOT wrapped in `canSeeCost`, which is
+what made it look deliberate.
+
+Two decisions worth recording:
+
+**Withhold, do not refuse, where quantities are the point.** Material lines and
+efficiency recommendations still return to every member; only their money is
+nulled. Refusing would have taken the purchase counts from the production
+manager who orders the material and the worker who cuts it — the roles the
+permission is meant to inform, not obstruct.
+
+**The nullability is in the type.** `ProjectMaterialView.unitPriceCents` went
+from `number` to `number | null`, which turned every consumer that would have
+rendered a withheld price into a build error rather than a runtime leak. That is
+the same reasoning as the branded `WorkspaceId` in T18: make the mistake
+impossible to compile rather than easy to miss.
+
+The AI layer's own redaction, added in T21, was REMOVED rather than kept
+alongside this. It now forwards what the services return. Two implementations of
+"what counts as money" is one more than can be kept in agreement, and the AI
+tests that assert no figure reaches a cost-blind role still pass — now proving
+the service's behaviour instead of the toolbox's.
