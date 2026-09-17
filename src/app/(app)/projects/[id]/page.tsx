@@ -105,9 +105,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   // A worker sees the project without the cost panel rather than an error.
   const canSeeCost = await hasProjectPermission(project.id, user.id, 'cost.view');
-  const [canShare, canComment] = await Promise.all([
+  const [canShare, canComment, canViewQuotes] = await Promise.all([
     hasProjectPermission(project.id, user.id, 'quote.create'),
     hasProjectPermission(project.id, user.id, 'project.edit'),
+    // Reading a quotation is its own permission: a designer and a worker do not
+    // hold it, and the totals on a quote are a client-facing price.
+    hasProjectPermission(project.id, user.id, 'quote.view'),
   ]);
   const [shares, comments, purchasePlan] = await Promise.all([
     listShares(project.id, user.id),
@@ -136,7 +139,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   const [mockups, quotes, productionView, versions, integrity, auditEvents] = await Promise.all([
     listMockups(project.id, user.id),
-    listQuotes(project.id, user.id),
+    // Not fetched at all without the permission; the panel is absent rather
+    // than rendered empty, the same way the cost panel is.
+    canViewQuotes ? listQuotes(project.id, user.id) : Promise.resolve([]),
     getProductionView(project.id, user.id),
     listVersions(project.id, user.id),
     getIntegrityReport(project.id, user.id),
@@ -248,6 +253,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <ProjectMaterialsPanel
           projectId={project.id}
           currency={currency}
+          showsPrices={canSeeCost}
           specApproved={spec.status === 'approved'}
           selected={projectMaterials.map((row) => ({
             ...row,
@@ -360,6 +366,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           currency={currency}
           recommendations={efficiency.recommendations}
           emptyReason={efficiency.emptyReason}
+          // The service's own flag rather than canSeeCost, so the panel cannot
+          // disagree with what the server actually sent.
+          showsPrices={efficiency.showsPrices}
         />
         {canSeeCost && costView ? (
         <CostPanel
@@ -387,6 +396,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           }
         />
         ) : null}
+        {canViewQuotes ? (
         <QuotesPanel
           projectId={project.id}
           currency={currency}
@@ -446,6 +456,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             currency: quote.currency,
           }))}
         />
+        ) : null}
         <ProductionPanel
           projectId={project.id}
           blockers={productionView.blockers}

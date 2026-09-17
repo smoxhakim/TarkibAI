@@ -154,9 +154,11 @@ describe('recommendations', () => {
 
     const match = result.recommendations.find((r) => r.alternative.materialId === cheaperId);
     expect(match).toBeTruthy();
+    // The owner holds cost.view, so the money is present rather than withheld.
+    expect(result.showsPrices).toBe(true);
     expect(match!.savingCents).toBeGreaterThan(0);
     // The saving is the difference between two real cutting runs.
-    expect(match!.current.totalCostCents - match!.alternative.totalCostCents).toBe(
+    expect(match!.current.totalCostCents! - match!.alternative.totalCostCents!).toBe(
       match!.savingCents
     );
   });

@@ -245,15 +245,23 @@ describe('the financial boundary', () => {
 
   it('returns purchase counts to production with no money anywhere in the payload', async () => {
     const result = (await run('production', 'get_material_calculations')) as {
-      lines: { unitsToPurchase: number | null }[];
+      lines: {
+        unitsToPurchase: number | null;
+        unitPriceCents: number | null;
+        unitPriceCentsSnapshot: number | null;
+        totalCostCents: number | null;
+      }[];
     };
 
+    // The quantity they need to do their job survives.
     expect(result.lines[0].unitsToPurchase).toBeGreaterThan(0);
 
-    // Not "no price field" — no price VALUE, anywhere in the serialised result.
-    const serialised = JSON.stringify(result);
-    expect(serialised).not.toContain('Cents');
-    expect(serialised).not.toContain('45000');
+    // Every monetary field is null, and — the assertion that actually matters —
+    // no price VALUE appears anywhere in the serialised result.
+    expect(result.lines[0].unitPriceCents).toBeNull();
+    expect(result.lines[0].unitPriceCentsSnapshot).toBeNull();
+    expect(result.lines[0].totalCostCents).toBeNull();
+    expect(JSON.stringify(result)).not.toContain('45000');
   });
 
   it('gives an owner the same line with its money intact', async () => {
@@ -273,14 +281,25 @@ describe('the financial boundary', () => {
 
   it('strips the money out of an efficiency recommendation for a cost-blind role', async () => {
     const result = (await run('worker', 'get_material_recommendations')) as {
-      recommendations: unknown[];
+      recommendations: {
+        savingCents: number | null;
+        current: { totalCostCents: number | null };
+        alternative: { totalCostCents: number | null };
+        summary: string;
+      }[];
+      showsPrices: boolean;
       emptyReason: string | null;
     };
-    // Whether there is anything to recommend depends on the library; what must
-    // hold either way is that nothing denominated in money comes back.
-    const serialised = JSON.stringify(result);
-    expect(serialised).not.toContain('savingCents');
-    expect(serialised).not.toContain('totalCostCents');
+
+    expect(result.showsPrices).toBe(false);
+    for (const recommendation of result.recommendations) {
+      expect(recommendation.savingCents).toBeNull();
+      expect(recommendation.current.totalCostCents).toBeNull();
+      expect(recommendation.alternative.totalCostCents).toBeNull();
+      // The engine's own summary quotes both totals, so it must have been
+      // replaced rather than forwarded.
+      expect(recommendation.summary).not.toMatch(/\d+\.\d{2}/);
+    }
   });
 });
 

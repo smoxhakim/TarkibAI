@@ -5,11 +5,21 @@ import { useState } from 'react';
 import { strings } from '@/lib/strings';
 import { formatMoney } from '@/lib/materials/format';
 
+type OutcomeView = {
+  materialId: string;
+  name: string;
+  stockUnits: number;
+  wastePercent: number;
+  /** Null when the reader's role may not see internal cost. */
+  totalCostCents: number | null;
+};
+
 export type RecommendationView = {
   kind: 'sheet_alternative' | 'bar_alternative' | 'allow_rotation';
-  current: { materialId: string; name: string; stockUnits: number; wastePercent: number; totalCostCents: number };
-  alternative: { materialId: string; name: string; stockUnits: number; wastePercent: number; totalCostCents: number };
-  savingCents: number;
+  current: OutcomeView;
+  alternative: OutcomeView;
+  /** Null when the reader's role may not see internal cost. */
+  savingCents: number | null;
   savingUnits: number;
   wasteReductionPercent: number;
   summary: string;
@@ -20,11 +30,15 @@ export function EfficiencyPanel({
   recommendations,
   emptyReason,
   currency,
+  showsPrices,
 }: {
   projectId: string;
   recommendations: RecommendationView[];
   emptyReason: string | null;
   currency: string;
+  /** Whether this reader holds `cost.view`. The server has already withheld the
+   *  figures if not; this decides what is said in their place. */
+  showsPrices: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
@@ -79,10 +93,14 @@ export function EfficiencyPanel({
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-sm font-medium">
-                    {strings.efficiency.saving}{' '}
-                    <span className="text-accent">
-                      {formatMoney(recommendation.savingCents, currency)}
-                    </span>
+                    {recommendation.savingCents === null ? null : (
+                      <>
+                        {strings.efficiency.saving}{' '}
+                        <span className="text-accent">
+                          {formatMoney(recommendation.savingCents, currency)}
+                        </span>
+                      </>
+                    )}
                     {recommendation.savingUnits > 0 ? (
                       <span className="text-ink-muted">
                         {' · '}
@@ -110,16 +128,20 @@ export function EfficiencyPanel({
                     <dt className="text-ink-muted">{strings.efficiency.currentLabel}</dt>
                     <dd>
                       {recommendation.current.name} · {recommendation.current.stockUnits}{' '}
-                      {strings.efficiency.unitsSuffix} ·{' '}
-                      {formatMoney(recommendation.current.totalCostCents, currency)}
+                      {strings.efficiency.unitsSuffix}
+                      {recommendation.current.totalCostCents === null
+                        ? ''
+                        : ` · ${formatMoney(recommendation.current.totalCostCents, currency)}`}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-ink-muted">{strings.efficiency.alternativeLabel}</dt>
                     <dd>
                       {recommendation.alternative.name} · {recommendation.alternative.stockUnits}{' '}
-                      {strings.efficiency.unitsSuffix} ·{' '}
-                      {formatMoney(recommendation.alternative.totalCostCents, currency)}
+                      {strings.efficiency.unitsSuffix}
+                      {recommendation.alternative.totalCostCents === null
+                        ? ''
+                        : ` · ${formatMoney(recommendation.alternative.totalCostCents, currency)}`}
                     </dd>
                   </div>
                 </dl>
@@ -150,6 +172,9 @@ export function EfficiencyPanel({
           </ul>
           <p className="mt-3 text-xs text-ink-muted">{strings.efficiency.computedNote}</p>
           <p className="mt-1 text-xs text-ink-muted">{strings.efficiency.applyNote}</p>
+          {showsPrices ? null : (
+            <p className="mt-1 text-xs text-ink-muted">{strings.efficiency.noPrices}</p>
+          )}
         </>
       )}
     </section>

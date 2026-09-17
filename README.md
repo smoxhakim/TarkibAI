@@ -253,7 +253,7 @@ src/
       projects/[id]/linear-cuts/      # GET, POST
       projects/[id]/linear-cuts/[cutId]/  # DELETE
       projects/[id]/linear-plan/      # GET, POST — bar cut optimisation
-      projects/[id]/recommendations/  # GET — computed material savings
+      projects/[id]/recommendations/  # GET — computed material savings (money behind cost.view)
       projects/[id]/recommendations/apply/  # POST — switch material
       projects/[id]/drawings/         # GET — live drawing + issued versions
       projects/[id]/drawings/issue/   # POST — capture a numbered snapshot
@@ -366,6 +366,13 @@ Important changes and downstream project decisions should require user confirmat
 ## Backend authorization
 
 Every protected action must be authorized server-side.
+
+The check belongs in the SERVICE that reads the data, not in the route, the
+component or the AI toolbox — each of those is one caller among several, and a
+permission enforced in one of them is absent from the rest. Internal cost is
+guarded by `cost.view` and quotations by `quote.view`, both decided in the
+service, so a figure a role may not see is never fetched on their behalf rather
+than being hidden from them afterwards.
 
 ## Secure file storage
 
@@ -620,7 +627,9 @@ T10 adds: material savings computed by re-running the real cutting engines
 against every alternative in your own library. A recommendation is only shown
 when it strictly reduces cost and can still produce every piece. Nothing is
 stored, because a stale saving is worse than none, and the agent can explain the
-figures in Darija but cannot generate or apply one.
+figures in Darija but cannot generate or apply one. The saving itself is
+internal cost: a role without `cost.view` gets the recommendation with its units
+and waste and no money at all.
 
 T11 adds: front, back, top and side views generated deterministically from the
 canvas geometry, with dimensions, material annotations and numbered part

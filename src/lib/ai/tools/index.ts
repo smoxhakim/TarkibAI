@@ -11,8 +11,6 @@ import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
 import { getIntegrityReport } from '@/lib/validation/service';
 import { assertProjectPermission } from '@/lib/projects/service';
-import type { Recommendation } from '@/lib/calc/efficiency/engine';
-import type { ProjectMaterialView } from '@/lib/materials/service';
 import type { CuttingPlan } from '@/generated/prisma/client';
 import { grantsFor, type ProjectAiAccess } from '../access';
 import {
@@ -37,13 +35,18 @@ import {
  *    direct API call (§7).
  *
  * 3. The toolbox is built for a ROLE, not just for a user (T21). A tool whose
- *    result a role may not see is not redacted — it is absent, and for money
- *    the underlying row is never read at all. Before T21 the chat was a way
- *    around the permission matrix: a worker could ask the assistant for a
+ *    result a role may not see is absent from the list. Before T21 the chat was
+ *    a way around the permission matrix: a worker could ask the assistant for a
  *    saving in dirhams, and could drive a specification edit that `project.edit`
  *    exists to prevent. The gate is applied twice on purpose — the tool is left
  *    out of the list AND asserts the permission when it runs — because a tool
  *    that is only safe by omission is one refactor away from being unsafe.
+ *
+ *    Where a tool stays available but its MONEY does not, the withholding is no
+ *    longer done here. The services decide it, so the AI, the HTTP routes and
+ *    the pages all inherit one answer; these tools forward what they are given.
+ *    Two implementations of "what counts as money" is one more than can be kept
+ *    correct.
  *
  * There is deliberately NO approval tool, and no tool that mutates the canvas
  * directly. The agent can read the scene and PROPOSE changes; a proposal does
@@ -69,76 +72,6 @@ const proposeSchema = z.object({
 
 /** Bounds a library search: a whole catalogue in one tool result helps nobody. */
 const MAX_MATERIAL_RESULTS = 25;
-
-/* -------------------------------------------------------------------------- */
-/* Money redaction                                                             */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A calculated material line with no money in it.
- *
- * A production manager may legitimately ask how many sheets to buy — that is
- * their job — while having no business seeing what they cost. Quantities, waste
- * and the calculation steps survive; anything denominated in money does not.
- * The steps are safe by construction: the material engine writes lengths, areas
- * and unit counts into them, never amounts.
- *
- * Built as an ALLOWLIST rather than by deleting the three price fields. A
- * denylist quietly stops being correct the day somebody adds a fourth one to
- * ProjectMaterialView, and the failure would be silent and financial.
- */
-function withoutMoney(line: ProjectMaterialView) {
-  return {
-    id: line.id,
-    materialId: line.materialId,
-    name: line.name,
-    category: line.category,
-    measurementModel: line.measurementModel,
-    role: line.role,
-    requiredQuantity: line.requiredQuantity,
-    requiredDimensions: line.requiredDimensions,
-    unitsToPurchase: line.unitsToPurchase,
-    totalPurchasedQuantity: line.totalPurchasedQuantity,
-    wasteQuantity: line.wasteQuantity,
-    wastePercent: line.wastePercent,
-    calculatedAt: line.calculatedAt,
-    unsupportedReason: line.unsupportedReason,
-    steps: line.steps,
-    warnings: line.warnings,
-    staleReasons: line.staleReasons,
-  };
-}
-
-/**
- * A recommendation with the money taken out.
- *
- * The engine's own `summary` sentence quotes both totals, so it cannot be
- * forwarded — it is replaced by one built from the units and waste, which is
- * the part a production role can act on.
- */
-function recommendationWithoutMoney(recommendation: Recommendation) {
-  const { current, alternative } = recommendation;
-  return {
-    kind: recommendation.kind,
-    current: {
-      name: current.name,
-      stockUnits: current.stockUnits,
-      wastePercent: current.wastePercent,
-      unplacedCount: current.unplacedCount,
-    },
-    alternative: {
-      name: alternative.name,
-      stockUnits: alternative.stockUnits,
-      wastePercent: alternative.wastePercent,
-      unplacedCount: alternative.unplacedCount,
-    },
-    savingUnits: recommendation.savingUnits,
-    wasteReductionPercent: recommendation.wasteReductionPercent,
-    summary:
-      `${alternative.name}: ${alternative.stockUnits} stock unit(s) instead of ${current.stockUnits}, ` +
-      `waste ${current.wastePercent}% → ${alternative.wastePercent}%.`,
-  };
-}
 
 /* -------------------------------------------------------------------------- */
 /* Toolbox                                                                     */
@@ -257,8 +190,8 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
       emptyObjectSchema.parse(rawArgs ?? {});
       const lines = await listProjectMaterials(projectId, userId);
       return {
-        lines: grants.viewCost ? lines : lines.map(withoutMoney),
-        note: 'Computed by the material engine. Report these figures exactly. A line marked stale was computed before a later change and must be recalculated before it is quoted.',
+        lines,
+        note: 'Computed by the material engine. Report these figures exactly. A line marked stale was computed before a later change and must be recalculated before it is quoted. A price that comes back null is one this user may not see — say so rather than guessing at it.',
       };
     },
   });
@@ -272,9 +205,8 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
       emptyObjectSchema.parse(rawArgs ?? {});
       const result = await getRecommendations(projectId, userId);
       return {
-        recommendations: grants.viewCost
-          ? result.recommendations
-          : result.recommendations.map(recommendationWithoutMoney),
+        recommendations: result.recommendations,
+        showsPrices: result.showsPrices,
         emptyReason: result.emptyReason,
         note: 'Computed by the cutting engines. Report these figures exactly; do not calculate your own. The user applies a recommendation in the interface.',
       };

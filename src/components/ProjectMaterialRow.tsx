@@ -47,8 +47,11 @@ export function ProjectMaterialRow({
           <p className="mt-0.5 text-xs text-ink-muted">
             {row.category}
             {row.role ? ` · ${row.role}` : ''}
-            {' · '}
-            {formatMoney(row.unitPriceCents, currency)} {PRICE_UNIT_LABELS[model]}
+            {/* Withheld, not zeroed: a reader without cost.view gets no price
+                from the server, and an invented "0.00 MAD" would read as one. */}
+            {row.unitPriceCents === null
+              ? ''
+              : ` · ${formatMoney(row.unitPriceCents, currency)} ${PRICE_UNIT_LABELS[model]}`}
           </p>
         </div>
         <button
@@ -181,12 +184,14 @@ export function ProjectMaterialRow({
                 <span className="ml-1 text-xs text-ink-muted">({Number(row.wastePercent)}%)</span>
               </dd>
             </div>
-            <div>
-              <dt className="text-xs text-ink-muted">{strings.projectMaterials.resultCost}</dt>
-              <dd className="text-sm font-medium">
-                {formatMoney(row.totalCostCents ?? 0, currency)}
-              </dd>
-            </div>
+            {row.totalCostCents === null ? null : (
+              <div>
+                <dt className="text-xs text-ink-muted">{strings.projectMaterials.resultCost}</dt>
+                <dd className="text-sm font-medium">
+                  {formatMoney(row.totalCostCents, currency)}
+                </dd>
+              </div>
+            )}
           </dl>
 
           {row.warnings.length > 0 ? (

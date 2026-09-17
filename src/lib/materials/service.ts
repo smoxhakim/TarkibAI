@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 import type { WorkspaceId } from '@/lib/workspaces/access';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, hasProjectPermission } from '@/lib/projects/service';
 import type { Material } from '@/generated/prisma/client';
 import type { CreateMaterialInput, MaterialQuery, UpdateMaterialInput } from './schema';
 import { recordAudit } from '@/lib/audit/service';
@@ -210,7 +210,16 @@ export type ProjectMaterialView = {
   category: string;
   measurementModel: string;
   role: string | null;
-  unitPriceCents: number;
+
+  /**
+   * Internal price, or null when the reader may not see one.
+   *
+   * Nullable rather than always-a-number because `cost.view` decides whether it
+   * is populated, and a non-nullable type would let a consumer render whatever
+   * happened to be there. With this, every caller has to say what it does when
+   * the price is withheld, and the compiler checks that it did.
+   */
+  unitPriceCents: number | null;
 
   /** User-stated input. Null when they have not said how much they need. */
   requiredQuantity: string | null;
@@ -221,6 +230,7 @@ export type ProjectMaterialView = {
   totalPurchasedQuantity: string | null;
   wasteQuantity: string | null;
   wastePercent: string | null;
+  /** Both null for a reader without `cost.view`, as well as before calculation. */
   unitPriceCentsSnapshot: number | null;
   totalCostCents: number | null;
   calculatedAt: Date | null;
@@ -302,11 +312,30 @@ function materialInputsChanged(
   );
 }
 
+/**
+ * The project's material lines.
+ *
+ * # Why this degrades rather than refuses
+ *
+ * Quantities are not costs. A production manager orders the material and a
+ * worker cuts it, and both need to know that a line needs four sheets; neither
+ * has any business knowing what those sheets cost (T18). Refusing the whole
+ * read — the rule the cost service uses, where every field IS financial — would
+ * take the quantities away with the prices and break the two roles that most
+ * need them.
+ *
+ * So the read is open to any project member and the MONEY is withheld: the
+ * three price fields come back null for a reader without `cost.view`, decided
+ * here rather than by whoever renders the result. The view is assembled field
+ * by field from the row, so a monetary column added to ProjectMaterial later
+ * cannot reach a caller unless somebody adds it to this list on purpose.
+ */
 export async function listProjectMaterials(
   projectId: string,
   userId: string
 ): Promise<ProjectMaterialView[]> {
   await assertProjectAccess(projectId, userId);
+  const showPrices = await hasProjectPermission(projectId, userId, 'cost.view');
 
   const [rows, approvedSpec] = await Promise.all([
     prisma.projectMaterial.findMany({
@@ -350,15 +379,15 @@ export async function listProjectMaterials(
       category: row.material.category,
       measurementModel: row.material.measurementModel,
       role: row.role,
-      unitPriceCents: row.material.unitPriceCents,
+      unitPriceCents: showPrices ? row.material.unitPriceCents : null,
       requiredQuantity: row.requiredQuantity?.toString() ?? null,
       requiredDimensions: row.requiredDimensions,
       unitsToPurchase: row.unitsToPurchase,
       totalPurchasedQuantity: row.totalPurchasedQuantity?.toString() ?? null,
       wasteQuantity: row.wasteQuantity?.toString() ?? null,
       wastePercent: row.wastePercent?.toString() ?? null,
-      unitPriceCentsSnapshot: row.unitPriceCentsSnapshot,
-      totalCostCents: row.totalCostCents,
+      unitPriceCentsSnapshot: showPrices ? row.unitPriceCentsSnapshot : null,
+      totalCostCents: showPrices ? row.totalCostCents : null,
       calculatedAt: row.calculatedAt,
       unsupportedReason: row.unsupportedReason,
       steps,

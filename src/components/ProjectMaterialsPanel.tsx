@@ -14,7 +14,8 @@ export type SelectedMaterial = {
   category: string;
   measurementModel: string;
   role: string | null;
-  unitPriceCents: number;
+  /** Null when the reader's role may not see internal prices. */
+  unitPriceCents: number | null;
   requiredQuantity: string | null;
   requiredDimensions: string | null;
   unitsToPurchase: number | null;
@@ -42,12 +43,16 @@ export function ProjectMaterialsPanel({
   library,
   currency,
   specApproved,
+  showsPrices,
 }: {
   projectId: string;
   selected: SelectedMaterial[];
   library: PickableMaterial[];
   currency: string;
   specApproved: boolean;
+  /** Whether this reader holds `cost.view`. The server has already withheld
+   *  the figures if not; this decides what the panel says in their place. */
+  showsPrices: boolean;
 }) {
   const router = useRouter();
   const [materialId, setMaterialId] = useState('');
@@ -60,7 +65,10 @@ export function ProjectMaterialsPanel({
 
   const anyCalculated = selected.some((row) => row.calculatedAt !== null);
   const anyRequirement = selected.some((row) => row.requiredQuantity !== null);
-  // Only lines that actually produced a cost contribute to the total.
+  // Only lines that actually produced a cost contribute to the total. For a
+  // reader without cost.view every line arrives with a null cost, so this is
+  // zero and is never rendered — the guard below is what decides that, not the
+  // sum coming out at zero.
   const totalCostCents = selected.reduce((sum, row) => sum + (row.totalCostCents ?? 0), 0);
 
   async function saveRequirement(
@@ -261,7 +269,7 @@ export function ProjectMaterialsPanel({
                       : strings.projectMaterials.calculate}
                 </button>
 
-                {anyCalculated ? (
+                {anyCalculated && showsPrices ? (
                   <div className="text-right">
                     <p className="text-sm">
                       <span className="text-ink-muted">
@@ -278,7 +286,11 @@ export function ProjectMaterialsPanel({
                 ) : null}
               </div>
             )}
-            <p className="mt-3 text-xs text-ink-muted">{strings.projectMaterials.notCalculatedHint}</p>
+            <p className="mt-3 text-xs text-ink-muted">
+              {showsPrices
+                ? strings.projectMaterials.notCalculatedHint
+                : strings.projectMaterials.noPrices}
+            </p>
           </div>
         </>
       )}

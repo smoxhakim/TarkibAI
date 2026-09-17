@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, hasProjectPermission } from '@/lib/projects/service';
 import { readCutDefaults, readMinUsableRemnant } from '@/lib/calc/cutting/schema';
 import {
   recommendBarAlternatives,
@@ -17,17 +17,95 @@ import {
  * changes, and stale financial advice is worse than none. Recomputing is cheap
  * — it is the same engines the plans already run.
  */
+/** One side of a comparison, with the money withheld where it must be. */
+export type EfficiencyOutcomeView = {
+  materialId: string;
+  name: string;
+  stockUnits: number;
+  wastePercent: number;
+  /** Null for a reader without `cost.view`. */
+  totalCostCents: number | null;
+  unplacedCount: number;
+};
+
+export type RecommendationView = {
+  kind: Recommendation['kind'];
+  current: EfficiencyOutcomeView;
+  alternative: EfficiencyOutcomeView;
+  /** Null for a reader without `cost.view`. */
+  savingCents: number | null;
+  savingUnits: number;
+  wasteReductionPercent: number;
+  /** Rebuilt from units and waste when the money has been withheld. */
+  summary: string;
+};
+
 export type ProjectRecommendations = {
-  recommendations: Recommendation[];
+  recommendations: RecommendationView[];
+  /** Whether this reader was given the money. Lets a renderer say so honestly. */
+  showsPrices: boolean;
   /** Set when nothing could be compared, with the reason. */
   emptyReason: string | null;
 };
 
+/**
+ * A recommendation as the caller may see it.
+ *
+ * The engine's own `summary` quotes both totals — `money()` builds it that way
+ * — so it cannot be forwarded to a reader without `cost.view`; it is REPLACED
+ * by one built from the units and the waste, which is the part a production
+ * role can act on. Everything monetary is set to null rather than deleted, the
+ * same shape the purchase plan uses (T20), so a renderer that forgets to check
+ * shows nothing instead of showing a leftover figure.
+ */
+function toView(recommendation: Recommendation, showPrices: boolean): RecommendationView {
+  const outcome = (side: Recommendation['current']): EfficiencyOutcomeView => ({
+    materialId: side.materialId,
+    name: side.name,
+    stockUnits: side.stockUnits,
+    wastePercent: side.wastePercent,
+    totalCostCents: showPrices ? side.totalCostCents : null,
+    unplacedCount: side.unplacedCount,
+  });
+
+  const { current, alternative } = recommendation;
+
+  return {
+    kind: recommendation.kind,
+    current: outcome(current),
+    alternative: outcome(alternative),
+    savingCents: showPrices ? recommendation.savingCents : null,
+    savingUnits: recommendation.savingUnits,
+    wasteReductionPercent: recommendation.wasteReductionPercent,
+    summary: showPrices
+      ? recommendation.summary
+      : `${alternative.name}: ${alternative.stockUnits} stock unit(s) instead of ` +
+        `${current.stockUnits}, waste ${current.wastePercent}% → ${alternative.wastePercent}%.`,
+  };
+}
+
+/**
+ * Efficiency recommendations for a project.
+ *
+ * # Why the money is withheld here rather than in the panel
+ *
+ * A recommendation is a price comparison: the saving, both totals, and a
+ * summary sentence that quotes them. All of that is internal cost, so it is
+ * governed by `cost.view` like every other internal figure (T18). Deciding that
+ * in the component would mean the API route still answered with the amounts,
+ * and a reader without the permission could simply call it.
+ *
+ * It degrades rather than refusing, because what is left after the money is
+ * removed is genuinely useful to the roles that lack `cost.view`: fewer sheets
+ * and less waste are the production manager's problem, and they can act on
+ * "three bars instead of four" without knowing what a bar costs.
+ */
 export async function getRecommendations(
   projectId: string,
   userId: string
 ): Promise<ProjectRecommendations> {
   await assertProjectAccess(projectId, userId);
+  const showPrices = await hasProjectPermission(projectId, userId, 'cost.view');
 
   const [pieces, cuts, materials] = await Promise.all([
     prisma.cuttingPiece.findMany({ where: { projectId } }),
@@ -40,6 +118,7 @@ export async function getRecommendations(
   if (pieces.length === 0 && cuts.length === 0) {
     return {
       recommendations: [],
+      showsPrices: showPrices,
       emptyReason:
         'Add the pieces or cut lengths for this project first — savings are computed from what you actually need to cut.',
     };
@@ -114,10 +193,13 @@ export async function getRecommendations(
     recommendations.push(...recommendBarAlternatives(current, barCandidates, materialCuts));
   }
 
+  // Ranked by the real saving before the money is removed, so a reader without
+  // cost.view still gets the best option first.
   recommendations.sort((a, b) => b.savingCents - a.savingCents);
 
   return {
-    recommendations,
+    recommendations: recommendations.map((recommendation) => toView(recommendation, showPrices)),
+    showsPrices: showPrices,
     emptyReason:
       recommendations.length === 0
         ? 'No cheaper option was found in your material library for what this project needs.'
