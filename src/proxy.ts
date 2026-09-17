@@ -1,20 +1,21 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-// DO NOT rename this to proxy.ts. Next 16 deprecates "middleware" in favour of
-// "proxy" and prints a warning on every build saying so — but it compiles
-// proxy.ts WITHOUT adding an entry to .next/server/middleware-manifest.json,
-// and that manifest is what Vercel reads to decide whether to run it at all.
+// Next 16 renamed the "middleware" convention to "proxy", and the two are NOT
+// interchangeable however much the deprecation notice says otherwise:
 //
-// The effect is silent and total. `next start` locally runs the proxy anyway,
-// so everything passes; on Vercel the middleware never executes, `auth()`
-// throws because it cannot detect clerkMiddleware, and EVERY request returns
-// 500 — pages, API routes, the public share link, all of it. The build is
-// green throughout.
+//   proxy.ts      -> Node.js runtime. Registered as "/_middleware" in
+//                    .next/server/functions-config-manifest.json. No edge/ dir.
+//   middleware.ts -> Edge runtime. Registered in middleware-manifest.json,
+//                    compiled into .next/server/edge/.
 //
-// Verified by building both ways: proxy.ts gives `middleware: {}` in the
-// manifest, middleware.ts gives `middleware: { '/': ... }`.
+// Renaming this to middleware.ts to chase an empty middleware-manifest.json
+// moved the whole thing onto Edge, where it crashed on Vercel with
+// MIDDLEWARE_INVOCATION_FAILED — every request, including the public ones. The
+// empty edge manifest is CORRECT for a Node-runtime proxy; it is not evidence
+// that the proxy is missing.
 //
-// Accept the deprecation warning. It is the version that runs.
+// Keep this on Node. It is the runtime Next 16 intends and the one without an
+// Edge API surface to fall foul of.
 
 // Public pages. Everything else is protected by default, so a route added in a
 // later phase is private unless it is deliberately listed here.
