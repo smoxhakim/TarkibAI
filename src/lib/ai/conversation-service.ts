@@ -10,7 +10,9 @@ import { HISTORY_WINDOW, IMAGE_CONTEXT_MESSAGES, isAiConfigured } from './config
 import { buildImageParts } from './vision';
 import { runAgent } from './agent';
 import { buildSpecStateMessage, buildSystemPrompt } from './prompts/system';
-import { getDomain } from '@/lib/domains/registry';
+import { selectCapabilities } from './prompts/capabilities';
+import { buildProjectContext, renderProjectState } from './context/project-context';
+import { resolveProjectAiAccess } from './access';
 import { buildToolbox } from './tools';
 
 export type ChatMessageView = {
@@ -56,13 +58,30 @@ export async function listMessages(projectId: string, userId: string): Promise<C
 }
 
 /**
- * Runs one turn of the intake conversation.
+ * Runs one turn of the conversation.
  *
- * Context sent to the model is rebuilt each turn from two sources: the recent
- * plain-text messages, and the CURRENT structured specification. The spec is
- * injected fresh rather than replayed from history, because the spec is the
- * source of truth (PRD §9) — this keeps the agent correct even after older
- * messages fall outside the history window.
+ * # What the model is given, and why
+ *
+ * Context is rebuilt from scratch every turn from four sources, never replayed
+ * from what was sent last time:
+ *
+ * 1. The system prompt, ASSEMBLED for this project and this caller's role —
+ *    only the capability modules that apply here (T21).
+ * 2. The CURRENT structured specification, which is the record of what the user
+ *    stated (PRD §9).
+ * 3. A summary of what the project already HAS: materials, calculations,
+ *    plans, cost status, documents. Added in T21 so the agent can explain a
+ *    deterministic result instead of being unable to reach it — and so it stops
+ *    telling users that features shipped in T4–T20 do not exist yet.
+ * 4. The recent plain-text messages, with images from the last few.
+ *
+ * Injecting 2 and 3 fresh keeps the agent correct even after older messages
+ * have fallen outside the history window, and means a tool call made earlier in
+ * the same thread cannot leave a stale figure sitting in the context.
+ *
+ * The state summary carries EXISTENCE and STATUS, not figures. Figures live
+ * behind tools, so a turn's fixed cost stays small and every authoritative
+ * number comes from the service that owns it.
  */
 export async function runConversationTurn(
   projectId: string,
@@ -70,17 +89,25 @@ export async function runConversationTurn(
   content: string,
   attachmentFileIds: string[] = []
 ): Promise<ConversationTurn> {
-  const project = await assertProjectAccess(projectId, userId);
+  // Resolves the project, the workspace and the caller's ROLE. Everything the
+  // agent may do this turn is decided from this and nothing else.
+  const access = await resolveProjectAiAccess(projectId, userId);
   if (!isAiConfigured()) throw aiUnavailable();
 
-  const history = await prisma.chatMessage.findMany({
-    where: { projectId },
-    orderBy: { createdAt: 'desc' },
-    take: HISTORY_WINDOW,
-  });
+  // Issued together: the conversation history and the specification do not
+  // depend on each other, and the turn now reads enough of the project that the
+  // sequential version would add latency for nothing.
+  const [history, specBefore] = await Promise.all([
+    prisma.chatMessage.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'desc' },
+      take: HISTORY_WINDOW,
+    }),
+    getSpec(projectId, userId),
+  ]);
   history.reverse();
 
-  const specBefore = await getSpec(projectId, userId);
+  const { grants, snapshot } = await buildProjectContext(access, specBefore);
 
   // Images from the most recent few messages are re-sent so the agent can still
   // answer a follow-up question about a photo a couple of turns later, while
@@ -116,8 +143,16 @@ export async function runConversationTurn(
   const newImageParts = await buildImageParts(newFiles);
 
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: buildSystemPrompt(getDomain(project.domain)) },
+    {
+      role: 'system',
+      content: buildSystemPrompt({
+        domain: access.domain,
+        capabilities: selectCapabilities(snapshot, grants),
+        grants,
+      }),
+    },
     { role: 'system', content: buildSpecStateMessage(specBefore.spec, specBefore.missing) },
+    { role: 'system', content: renderProjectState(snapshot) },
     ...historyMessages,
     newImageParts.length > 0
       ? { role: 'user', content: [{ type: 'text' as const, text: content }, ...newImageParts] }
@@ -125,7 +160,7 @@ export async function runConversationTurn(
   ];
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const result = await runAgent(client, messages, buildToolbox(projectId, userId));
+  const result = await runAgent(client, messages, buildToolbox(access));
 
   const text =
     result.text ||

@@ -268,6 +268,40 @@ Validated backend services
 
 The agent should be instructed to understand local phrasing while producing strict structured tool calls.
 
+### As implemented (T1, strengthened in T21)
+
+There is no normaliser, transliterator or lexicon lookup in front of the model,
+and there is not going to be one: a pipeline would have to decide what a phrase
+means before it has seen the project context that disambiguates it, and it
+would mangle the half of real messages that switch to French or English
+mid-sentence.
+
+What is written down instead is the local knowledge a model handles unreliably
+unless told — `src/lib/ai/prompts/darija.ts`. Each rule is there because getting
+it wrong changes a project fact:
+
+| Rule | What it prevents |
+| --- | --- |
+| Arabic chat alphabet (3 = ع, 7 = ح, 9 = ق, 5 = خ) | reading "3ard" (width) as a number |
+| Arabic-Indic digits ٠–٩ | losing a dimension written in Arabic script |
+| Number words (juj, tlata, khamsa…) | losing a quantity written in words |
+| The `ma…ch` negation circumfix | recording a material the user said they do NOT have |
+| "santim" is a centimetre in a length, a CENTIME in a price | a price read as a dimension, or the reverse |
+| the specification holds ONE unit, so mixed units are converted | "80 santim" recorded as 80 m |
+| الطول / ttul maps onto width or height — there is no "length" field | a stated dimension silently dropped |
+| "wakha" / "safi" / "ok" are acknowledgements | an inferred approval |
+
+The الطول row is the one that shows why this is evaluated rather than reasoned
+about. An earlier draft of the module defined الطول as "length", which is
+correct Arabic and useless here: the specification has width, height and depth
+and no length, so the agent recorded العرض and DROPPED the other number
+entirely. A dimension the user stated and the system discarded is the worst
+failure in this product, and only the live evaluation caught it.
+
+Coverage is evaluated live against the real model in `src/lib/ai/eval`, and the
+presence of each rule is asserted deterministically in
+`src/lib/ai/prompts/system.test.ts`, so a prompt edit cannot quietly drop one.
+
 ---
 
 ## 6. AI Agent Design
@@ -289,6 +323,55 @@ Potential future specialists:
 Do not introduce multiple agents merely for organizational style.
 
 Introduce them only when delegation materially improves reliability or maintainability.
+
+### As implemented (T21): one agent, composed capabilities
+
+T21 evaluated the specialist split and rejected it, for reasons that are
+specific to this product rather than stylistic:
+
+1. **A single Moroccan sentence crosses every domain.** "zid 20cm f l3ard w
+   ch7al ghadi ykhelli?" is design, specification, materials and cost at once.
+   Routing it would require agent-to-agent orchestration for the most ordinary
+   thing a user says.
+2. **The turn budget is already tight.** The chat route runs under
+   `maxDuration = 60` on Vercel Hobby, and a long tool-calling turn can reach
+   it. An orchestrator plus a specialist doubles the model round trips inside
+   that budget — a measurable regression, not a speculative one.
+3. **Independent agents need their own conversation state.** TARKIB has one
+   thread per project (`ChatMessage`). Giving each specialist its own would mean
+   new tables with no evidence that they are needed.
+
+What specialisation actually buys is a smaller, sharper instruction set and tool
+set for the job in front of the user. That is achieved without any of the above:
+
+```
+                 project state  +  caller's role
+                          |
+                          v
+            selectCapabilities()   (pure, unit-tested)
+                          |
+        +-----------------+------------------+
+        |                                    |
+   prompt modules                       tool subset
+   specification / references /         read tools always;
+   design / materials / cutting /       writes behind project.edit
+   cost / drawings / production         and design.edit;
+        |                               cost tools behind cost.view
+        +-----------------+------------------+
+                          |
+                          v
+                  ONE agent, one thread,
+                  one bounded tool loop
+```
+
+`src/lib/ai/prompts/capabilities.ts` holds the modules; selection is a pure
+function of a `ProjectSnapshot` and the caller's `AiGrants`, so "the agent was
+given the right instructions and the right tools" is a unit test rather than a
+claim about a prompt.
+
+The seam sits exactly where a real agent boundary would go. If evaluation ever
+shows a module failing in a way better context cannot fix, that module can
+become a delegated call without rewriting the orchestration around it.
 
 ---
 
@@ -324,6 +407,37 @@ Server:
 7. Return structured calculation.
 
 The model must never directly write arbitrary database fields.
+
+### The implemented surface (T21)
+
+Built per caller by `buildToolbox(access)` from a `ProjectAiAccess` that carries
+the project, the workspace and the caller's **role**. A tool whose result a role
+may not see is ABSENT, not redacted — and for money the underlying row is never
+read at all.
+
+| Tool | Side effects | Required permission |
+| --- | --- | --- |
+| `get_project_spec` | none | project.view |
+| `update_project_spec` | writes a draft spec | **project.edit** |
+| `get_canvas` | none | project.view |
+| `propose_design_change` | creates a pending proposal | **design.edit** |
+| `list_materials` | none | project.view (workspace-scoped) |
+| `get_material_calculations` | none | project.view; money only with cost.view |
+| `get_material_recommendations` | none | project.view; money only with cost.view |
+| `get_cutting_plans` | none | project.view |
+| `get_project_cost` | none | **cost.view** |
+| `get_project_readiness` | none | project.view |
+
+Two properties hold across all of them:
+
+- **No identity or scope is a parameter.** `projectId`, `workspaceId` and
+  `userId` are bound when the toolbox is constructed and are rejected by the
+  argument schemas if a model sends them.
+- **Permission is enforced twice.** A gated tool is left out of the list AND
+  asserts its permission when it runs. A tool that is only safe by omission is
+  one refactor away from being unsafe.
+
+There is still no approval tool, and no tool that mutates the canvas directly.
 
 ---
 
@@ -2512,3 +2626,69 @@ included. The two manifests have to be read together.
 than redirecting, so the redirect is now explicit via `redirectToSignIn()`. That
 is worth keeping regardless of runtime: it states the intended outcome instead
 of leaving the choice to the library.
+
+### T21 — Advanced Fabrication Intelligence (Phase 21)
+
+**No specialist agents.** See §6. The roadmap's five agents became capability
+MODULES inside the one agent, selected per turn from project state and the
+caller's role. The decisive argument was the turn budget: the chat route is
+pinned at `maxDuration = 60` on Hobby and an orchestrator plus a specialist
+doubles the round trips inside it. The modules sit where the agent boundary
+would go, so the decision is reversible without rewriting the orchestration.
+
+**The prompt was lying about the product.** The T1 system prompt instructed the
+agent to say that a mockup, a drawing, a price or a PDF was "not available yet
+and the specification is the current step". That was true when it was written
+and false from T4 onwards — the agent was actively misinforming users about
+their own product, and nothing failed because a prompt is code nobody
+typechecks. The claims that matter are now asserted in
+`src/lib/ai/prompts/system.test.ts`.
+
+**The agent could not reach the answers the platform already had.** Its only
+view of the project was the specification. Asked "ch7al mn plaque?" it had no
+path to the figure the material engine had computed and stored, so the only
+honest reply was that it did not know — and the only dishonest one was to do
+the arithmetic. T21 adds a per-turn `ProjectSnapshot` and read-only tools for
+materials, cutting, cost and readiness. **The snapshot carries existence and
+status; the tools carry the figures.** That split is what keeps a turn's fixed
+cost bounded while still letting the agent answer with the engine's number.
+
+**Four kinds of statement, kept apart.** User-stated facts (the only thing that
+reaches the specification), application-computed results (reported exactly),
+agent inference (marked as the agent's, never recorded), and unknowns (asked
+about, never filled in). A size read off a photograph is inference: the
+reference-image module says so, and an eval attaches an image, asks the agent to
+measure it and record it, and asserts the specification stays empty.
+
+**The chat was a way around the permission matrix.** `buildToolbox(projectId,
+userId)` gave every member the same tools, so a `worker` — the role
+`cost.view` exists for — could ask the assistant for a saving in dirhams, and
+could drive `update_project_spec` despite lacking `project.edit`. The toolbox is
+now built from the caller's role. Money is removed from
+`get_material_calculations` and `get_material_recommendations` by an ALLOWLIST
+rather than by deleting known price fields: a denylist stops being correct the
+day somebody adds a fourth one, and that failure would be silent and financial.
+
+**Voice is deferred, deliberately.** Nothing in the repository supports it —
+there is no audio capture, no upload path for audio (`isVisionMimeType` gates
+attachments to images), no transcription provider, and no decision about which
+one. Building a placeholder would mean adding a speech dependency and an
+architectural seam before the requirements exist. It stays out until it is a
+task with a defined provider and UX.
+
+**No new tables, no new dependencies.** Everything T21 needed already existed:
+the deterministic services, the permission matrix, the validation layer, the
+vision pipeline, and `openai`. An `Agent`, `AgentMemory` or `AgentConversation`
+table would have been state nothing in the implementation asks for.
+
+**Known gaps left alone, on purpose.** Two pre-existing boundaries are looser
+than the AI layer now is, and both are outside this milestone:
+
+- `getRecommendations`, `listProjectMaterials` and `listQuotes` are guarded by
+  project access only, so `/api/projects/:id/recommendations` and the project
+  page's efficiency and material panels show prices to roles without
+  `cost.view`. The AI surface no longer does.
+- `createProposal`, `approveProposal` and `updateDraftSpec` check project access
+  but not `design.edit` / `project.edit`, so the design-proposal routes accept
+  decisions from roles the matrix excludes. The AI tools that reach them now
+  assert the permission themselves.

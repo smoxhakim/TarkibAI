@@ -282,11 +282,16 @@ src/
     projects/             # schema (Zod), service (ownership), status rules
     ai/
       config.ts           # model + feature gate
+      access.ts           # project + workspace + ROLE for one turn
       agent.ts            # bounded tool-calling loop
       conversation-service.ts
-      prompts/system.ts   # Moroccan Darija instructions
-      tools/              # context-bound toolbox (no approval tool)
-      eval/               # live Darija evaluation cases
+      context/            # per-turn cross-domain project snapshot
+      prompts/
+        system.ts         # assembled per turn from the modules below
+        darija.ts         # Moroccan Darija comprehension rules
+        capabilities.ts   # design / materials / cost / … as modules
+      tools/              # role-aware toolbox (no approval tool)
+      eval/               # live Darija + fabrication evaluation cases
       vision.ts           # downscale + inline images for the model
     spec/                 # schema, deterministic merge, completeness, service
     files/                # upload authorisation, confirmation, ownership
@@ -494,7 +499,7 @@ exist until it fetches that endpoint.
 | `npm run lint` | ESLint |
 | `npm test` | Unit tests (no database required) |
 | `npm run test:integration` | Integration tests against the real database |
-| `npm run test:eval` | Live Moroccan Darija evaluations (needs `OPENAI_API_KEY`; self-skips without one) |
+| `npm run test:eval` | Live Darija, design, vision and fabrication-intelligence evaluations (needs `OPENAI_API_KEY`; self-skips without one) |
 | `npm run prisma:migrate` | Create and apply a migration |
 | `npm run prisma:studio` | Browse the database |
 
@@ -546,7 +551,10 @@ T3 Material Library · T4 Material Calculation · T5 Cost Engine ·
 T6 Smart Canvas · T7 Conversational Design Editing ·
 T8 Sheet Cutting Optimization · T9 Linear Material Cutting ·
 T10 Material Efficiency Recommendations · T11 Technical Drawings ·
-T12 AI Mockups**
+T12 AI Mockups · T13 Client Quotes · T14 Production PDF ·
+T15 Version History · T16 Validation and Safety · T17 Domain Framework ·
+T18 Teams and Permissions · T19 Collaboration · T20 Commercial Features ·
+T21 Advanced Fabrication Intelligence**
 
 Working end to end:
 
@@ -758,10 +766,36 @@ Eleven capabilities were listed for this phase; four shipped. Billing,
 inventory integrations, a CRM, extra pricing models and extra quote templates
 are recorded in TODO as deliberately out, with reasons.
 
-**Next: T21 — Advanced AI (Phase 21)**
+T21 adds: advanced fabrication intelligence, without splitting the AI into
+separate agents. The system prompt is now assembled per turn from capability
+modules — specification, reference images, design, materials, cutting, cost,
+drawings, production — selected from what the project actually has and what the
+caller's role allows. A worker never reads the cost rules and is never given a
+cost tool; the roles that price the work are.
 
-Not yet implemented. Nothing in the product returns a fabricated number or a
-mocked AI reply.
+The agent also sees the project it is talking about. A bounded per-turn snapshot
+says what exists and whether it is current — which materials are selected, which
+are calculated, whether a cost is superseded, what is blocking a quote — and
+read-only tools return the figures themselves from the engines that own them.
+So "ch7al mn plaque ghadi n7taj?" is answered with the material engine's number
+rather than with arithmetic the agent did, and "ch7al kelfa?" before a cost
+exists is answered by saying what is missing.
+
+Darija understanding covers the Arabic chat alphabet, Arabic-Indic digits,
+number words, the `ma…ch` negation circumfix, "santim" meaning a centimetre in
+a length and a centime in a price, and the fact that "wakha" is an
+acknowledgement rather than consent. The agent
+keeps four kinds of statement apart: what the user stated, what the application
+computed, what the agent is inferring, and what nobody knows yet. Only the first
+reaches the specification — a size read off a photograph never does.
+
+Voice is deferred with its reasons recorded in TODO: the repository has no audio
+path and no transcription provider, and a placeholder would be a dependency and
+a seam added before the requirements exist.
+
+**Next: not yet decided.**
+
+Nothing in the product returns a fabricated number or a mocked AI reply.
 
 A milestone is complete only when the functionality works end to end — not when
 UI files or API stubs exist.

@@ -5,11 +5,26 @@ import { getScene } from '@/lib/canvas/service';
 import { sceneCommandSchema } from '@/lib/canvas/schema';
 import { createProposal } from '@/lib/design/service';
 import { getRecommendations } from '@/lib/calc/efficiency/service';
+import { listMaterials, listProjectMaterials } from '@/lib/materials/service';
+import { materialQuerySchema } from '@/lib/materials/schema';
+import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
+import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
+import { getIntegrityReport } from '@/lib/validation/service';
+import { assertProjectPermission } from '@/lib/projects/service';
+import type { Recommendation } from '@/lib/calc/efficiency/engine';
+import type { ProjectMaterialView } from '@/lib/materials/service';
+import type { CuttingPlan } from '@/generated/prisma/client';
+import { grantsFor, type ProjectAiAccess } from '../access';
+import {
+  MATERIAL_QUERY_JSON_SCHEMA,
+  PROPOSE_DESIGN_CHANGE_SCHEMA,
+  SPEC_PATCH_JSON_SCHEMA,
+} from './schemas';
 
 /**
  * The agent's tool surface.
  *
- * Two properties matter more than anything else here:
+ * Three properties matter more than anything else here:
  *
  * 1. `projectId` and `userId` are NOT tool parameters. They are bound by the
  *    caller when the toolbox is constructed, from the server-side Clerk
@@ -20,6 +35,15 @@ import { getRecommendations } from '@/lib/calc/efficiency/service';
  *    routes use, and executes through the same service layer, so an AI-driven
  *    write passes through the identical ownership and validation checks as a
  *    direct API call (§7).
+ *
+ * 3. The toolbox is built for a ROLE, not just for a user (T21). A tool whose
+ *    result a role may not see is not redacted — it is absent, and for money
+ *    the underlying row is never read at all. Before T21 the chat was a way
+ *    around the permission matrix: a worker could ask the assistant for a
+ *    saving in dirhams, and could drive a specification edit that `project.edit`
+ *    exists to prevent. The gate is applied twice on purpose — the tool is left
+ *    out of the list AND asserts the permission when it runs — because a tool
+ *    that is only safe by omission is one refactor away from being unsafe.
  *
  * There is deliberately NO approval tool, and no tool that mutates the canvas
  * directly. The agent can read the scene and PROPOSE changes; a proposal does
@@ -43,198 +67,143 @@ const proposeSchema = z.object({
   specPatch: projectSpecPatchSchema.nullable().optional(),
 });
 
-/** Zod -> JSON Schema for the two shapes we expose, written explicitly for clarity. */
-const SPEC_PATCH_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    projectType: { type: ['string', 'null'], description: 'e.g. enseigne, façade, totem, caisson lumineux, lettres 3D' },
-    industry: { type: ['string', 'null'] },
-    dimensions: {
-      type: ['object', 'null'],
-      additionalProperties: false,
-      properties: {
-        width: { type: ['number', 'null'] },
-        height: { type: ['number', 'null'] },
-        depth: { type: ['number', 'null'] },
-        unit: { type: ['string', 'null'], enum: ['mm', 'cm', 'm', null] },
-      },
-    },
-    quantity: { type: ['integer', 'null'] },
-    components: {
-      type: ['array', 'null'],
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['name'],
-        properties: {
-          name: { type: 'string' },
-          quantity: { type: ['integer', 'null'] },
-          notes: { type: ['string', 'null'] },
-        },
-      },
-    },
-    materials: {
-      type: ['array', 'null'],
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['name'],
-        properties: {
-          name: { type: 'string' },
-          appliesTo: { type: ['string', 'null'] },
-          notes: { type: ['string', 'null'] },
-        },
-      },
-    },
-    lighting: {
-      type: ['object', 'null'],
-      additionalProperties: false,
-      properties: {
-        type: { type: ['string', 'null'], enum: ['none', 'led', 'neon', 'backlit', 'frontlit', 'halo', 'other', null] },
-        details: { type: ['string', 'null'] },
-      },
-    },
-    mounting: {
-      type: ['object', 'null'],
-      additionalProperties: false,
-      properties: {
-        method: { type: ['string', 'null'] },
-        surface: { type: ['string', 'null'] },
-        heightFromGroundM: { type: ['number', 'null'] },
-      },
-    },
-    site: {
-      type: ['object', 'null'],
-      additionalProperties: false,
-      properties: {
-        environment: { type: ['string', 'null'], enum: ['indoor', 'outdoor', null] },
-        locationText: { type: ['string', 'null'] },
-      },
-    },
-    lettering: {
-      type: ['object', 'null'],
-      additionalProperties: false,
-      properties: {
-        text: { type: ['string', 'null'] },
-        style: { type: ['string', 'null'] },
-        colors: { type: ['array', 'null'], items: { type: 'string' } },
-      },
-    },
-    finishNotes: { type: ['string', 'null'] },
-    deadline: { type: ['string', 'null'] },
-    notes: { type: ['string', 'null'] },
-  },
-} as const;
+/** Bounds a library search: a whole catalogue in one tool result helps nobody. */
+const MAX_MATERIAL_RESULTS = 25;
 
-const SCENE_OBJECT_FIELDS = {
-  type: { type: 'string', enum: ['panel', 'frame', 'lettering', 'light', 'note'] },
-  label: { type: ['string', 'null'] },
-  x: { type: 'integer', description: 'Millimetres from the scene origin.' },
-  y: { type: 'integer', description: 'Millimetres from the scene origin.' },
-  widthMm: { type: 'integer' },
-  heightMm: { type: 'integer' },
-  rotationDeg: { type: 'integer' },
-  materialId: { type: ['string', 'null'], description: 'Id from the user material library.' },
-  notes: { type: ['string', 'null'] },
-  showDimensions: { type: 'boolean' },
-} as const;
+/* -------------------------------------------------------------------------- */
+/* Money redaction                                                             */
+/* -------------------------------------------------------------------------- */
 
-const PROPOSE_DESIGN_CHANGE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['summary', 'commands'],
-  properties: {
-    summary: {
-      type: 'string',
-      description:
-        "One or two sentences, in the user's language, describing exactly what will change and by how much. This is what the user reads before approving.",
-    },
-    commands: {
-      type: 'array',
-      minItems: 1,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['kind'],
-        properties: {
-          kind: { type: 'string', enum: ['add_object', 'update_object', 'remove_object'] },
-          id: { type: 'string', description: 'Target object id, for update_object and remove_object.' },
-          object: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['type', 'x', 'y', 'widthMm', 'heightMm'],
-            properties: { id: { type: 'string' }, ...SCENE_OBJECT_FIELDS },
-            description: 'The new object, for add_object.',
-          },
-          changes: {
-            type: 'object',
-            additionalProperties: false,
-            properties: SCENE_OBJECT_FIELDS,
-            description:
-              'Fields to change, for update_object. Omitted fields keep their current value.',
-          },
-        },
-      },
-    },
-    specPatch: {
-      type: ['object', 'null'],
-      description:
-        'Include ONLY when the change alters an agreed project fact such as an overall dimension. Approving then creates a new draft specification the user still has to approve separately.',
-      additionalProperties: true,
-    },
-  },
-} as const;
+/**
+ * A calculated material line with no money in it.
+ *
+ * A production manager may legitimately ask how many sheets to buy — that is
+ * their job — while having no business seeing what they cost. Quantities, waste
+ * and the calculation steps survive; anything denominated in money does not.
+ * The steps are safe by construction: the material engine writes lengths, areas
+ * and unit counts into them, never amounts.
+ *
+ * Built as an ALLOWLIST rather than by deleting the three price fields. A
+ * denylist quietly stops being correct the day somebody adds a fourth one to
+ * ProjectMaterialView, and the failure would be silent and financial.
+ */
+function withoutMoney(line: ProjectMaterialView) {
+  return {
+    id: line.id,
+    materialId: line.materialId,
+    name: line.name,
+    category: line.category,
+    measurementModel: line.measurementModel,
+    role: line.role,
+    requiredQuantity: line.requiredQuantity,
+    requiredDimensions: line.requiredDimensions,
+    unitsToPurchase: line.unitsToPurchase,
+    totalPurchasedQuantity: line.totalPurchasedQuantity,
+    wasteQuantity: line.wasteQuantity,
+    wastePercent: line.wastePercent,
+    calculatedAt: line.calculatedAt,
+    unsupportedReason: line.unsupportedReason,
+    steps: line.steps,
+    warnings: line.warnings,
+    staleReasons: line.staleReasons,
+  };
+}
 
-export function buildToolbox(projectId: string, userId: string): ToolDefinition[] {
-  return [
-    {
-      name: 'get_project_spec',
-      description:
-        'Read the project specification currently recorded, together with the list of required fields still missing. Use this to check state before answering.',
-      parameters: { type: 'object', additionalProperties: false, properties: {} },
-      execute: async (rawArgs) => {
-        emptyObjectSchema.parse(rawArgs ?? {});
-        const view = await getSpec(projectId, userId);
-        return { spec: view.spec, missing: view.missing, complete: view.complete, status: view.status };
-      },
+/**
+ * A recommendation with the money taken out.
+ *
+ * The engine's own `summary` sentence quotes both totals, so it cannot be
+ * forwarded — it is replaced by one built from the units and waste, which is
+ * the part a production role can act on.
+ */
+function recommendationWithoutMoney(recommendation: Recommendation) {
+  const { current, alternative } = recommendation;
+  return {
+    kind: recommendation.kind,
+    current: {
+      name: current.name,
+      stockUnits: current.stockUnits,
+      wastePercent: current.wastePercent,
+      unplacedCount: current.unplacedCount,
     },
-    {
-      name: 'get_canvas',
-      description:
-        'Read the project canvas: every object with its id, type, label, position and size in millimetres. Call this before proposing a change so you target the right object and know its current dimensions.',
-      parameters: { type: 'object', additionalProperties: false, properties: {} },
-      execute: async (rawArgs) => {
-        emptyObjectSchema.parse(rawArgs ?? {});
-        const view = await getScene(projectId, userId);
-        return {
-          objects: view.scene.objects,
-          diverged: view.diverged,
-          seedBlockedReason: view.seedBlockedReason,
-        };
-      },
+    alternative: {
+      name: alternative.name,
+      stockUnits: alternative.stockUnits,
+      wastePercent: alternative.wastePercent,
+      unplacedCount: alternative.unplacedCount,
     },
-    {
-      name: 'get_material_recommendations',
-      description:
-        'Read material efficiency recommendations for this project: cheaper stock sizes from the user\'s own material library, with the real saving in sheets or bars, waste and cost. These are COMPUTED by the cutting engines — report the numbers exactly as given and never estimate a saving yourself. You cannot apply one; the user applies it in the interface.',
-      parameters: { type: 'object', additionalProperties: false, properties: {} },
-      execute: async (rawArgs) => {
-        emptyObjectSchema.parse(rawArgs ?? {});
-        const result = await getRecommendations(projectId, userId);
-        return {
-          recommendations: result.recommendations,
-          emptyReason: result.emptyReason,
-          note: 'Computed by the cutting engines. Report these figures exactly; do not calculate your own. The user applies a recommendation in the interface.',
-        };
-      },
+    savingUnits: recommendation.savingUnits,
+    wasteReductionPercent: recommendation.wasteReductionPercent,
+    summary:
+      `${alternative.name}: ${alternative.stockUnits} stock unit(s) instead of ${current.stockUnits}, ` +
+      `waste ${current.wastePercent}% → ${alternative.wastePercent}%.`,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Toolbox                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
+  const { projectId, userId, workspaceId } = access;
+  const grants = grantsFor(access.role);
+  const tools: ToolDefinition[] = [];
+
+  /* ---- Specification ----------------------------------------------------- */
+
+  tools.push({
+    name: 'get_project_spec',
+    description:
+      'Read the project specification currently recorded, together with the list of required fields still missing. This is what the USER STATED, not what the application computed.',
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    execute: async (rawArgs) => {
+      emptyObjectSchema.parse(rawArgs ?? {});
+      const view = await getSpec(projectId, userId);
+      return { spec: view.spec, missing: view.missing, complete: view.complete, status: view.status };
     },
-    {
+  });
+
+  if (grants.editProject) {
+    tools.push({
+      name: 'update_project_spec',
+      description:
+        'Record information the user has actually stated. Send only the fields they gave you; omitted fields keep their current values. Send null to clear a field the user retracted. Never send a value the user did not state, and never send a value you estimated from an image.',
+      parameters: SPEC_PATCH_JSON_SCHEMA as unknown as Record<string, unknown>,
+      execute: async (rawArgs) => {
+        await assertProjectPermission(projectId, userId, 'project.edit');
+        const patch = projectSpecPatchSchema.parse(rawArgs ?? {});
+        const view = await updateDraftSpec(projectId, userId, patch);
+        return { spec: view.spec, missing: view.missing, complete: view.complete };
+      },
+    });
+  }
+
+  /* ---- Design ------------------------------------------------------------ */
+
+  tools.push({
+    name: 'get_canvas',
+    description:
+      'Read the project canvas: every object with its id, type, label, position and size in millimetres. Call this before proposing a change so you target the right object and know its current dimensions.',
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    execute: async (rawArgs) => {
+      emptyObjectSchema.parse(rawArgs ?? {});
+      const view = await getScene(projectId, userId);
+      return {
+        objects: view.scene.objects,
+        diverged: view.diverged,
+        seedBlockedReason: view.seedBlockedReason,
+      };
+    },
+  });
+
+  if (grants.editDesign) {
+    tools.push({
       name: 'propose_design_change',
       description:
-        'Propose a change to the canvas for the user to approve. This does NOT change anything by itself — the user must approve it in the interface. Always read the canvas first, compute the new value from the object\'s CURRENT dimensions, and state the exact result in the summary.',
+        "Propose a change to the canvas for the user to approve. This does NOT change anything by itself — the user must approve it in the interface. Always read the canvas first, compute the new value from the object's CURRENT dimensions, and state the exact result in the summary.",
       parameters: PROPOSE_DESIGN_CHANGE_SCHEMA as unknown as Record<string, unknown>,
       execute: async (rawArgs) => {
+        await assertProjectPermission(projectId, userId, 'design.edit');
         const parsed = proposeSchema.parse(rawArgs ?? {});
         const proposal = await createProposal(projectId, userId, {
           summary: parsed.summary,
@@ -248,17 +217,173 @@ export function buildToolbox(projectId: string, userId: string): ToolDefinition[
           note: 'Proposal recorded. Nothing has changed yet — the user must approve it in the interface.',
         };
       },
+    });
+  }
+
+  /* ---- Materials --------------------------------------------------------- */
+
+  tools.push({
+    name: 'list_materials',
+    description:
+      "Search the workspace's own material library — the stock this business actually buys. Use it before talking about a material, so you never suggest something they do not stock. Returns stock sizes and thicknesses. Archived materials are never returned.",
+    parameters: MATERIAL_QUERY_JSON_SCHEMA as unknown as Record<string, unknown>,
+    execute: async (rawArgs) => {
+      const query = materialQuerySchema.parse({ ...(rawArgs as object), includeArchived: false });
+      const materials = await listMaterials(workspaceId, query);
+      return {
+        materials: materials.slice(0, MAX_MATERIAL_RESULTS).map((material) => ({
+          id: material.id,
+          name: material.name,
+          category: material.category,
+          measurementModel: material.measurementModel,
+          standardLengthMm: material.standardLengthMm,
+          sheetWidthMm: material.sheetWidthMm,
+          sheetHeightMm: material.sheetHeightMm,
+          thicknessMm: material.thicknessMm?.toString() ?? null,
+          ...(grants.viewCost ? { unitPriceCents: material.unitPriceCents } : {}),
+        })),
+        totalMatched: materials.length,
+        note: 'This is the user\'s own library. Never suggest stock that is not in it as though they could buy it.',
+      };
     },
-    {
-      name: 'update_project_spec',
+  });
+
+  tools.push({
+    name: 'get_material_calculations',
+    description:
+      'Read the deterministic material calculation for this project: how many sheets, bars or pieces to purchase, the waste, and the steps the engine took to get there. These figures are COMPUTED — report them exactly and never work one out yourself. A line with no calculation has no quantity; say so rather than producing one.',
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    execute: async (rawArgs) => {
+      emptyObjectSchema.parse(rawArgs ?? {});
+      const lines = await listProjectMaterials(projectId, userId);
+      return {
+        lines: grants.viewCost ? lines : lines.map(withoutMoney),
+        note: 'Computed by the material engine. Report these figures exactly. A line marked stale was computed before a later change and must be recalculated before it is quoted.',
+      };
+    },
+  });
+
+  tools.push({
+    name: 'get_material_recommendations',
+    description:
+      "Read material efficiency recommendations for this project: cheaper or tighter stock sizes from the user's own material library, with the real saving in sheets or bars and waste. These are COMPUTED by re-running the cutting engines — report the numbers exactly as given and never estimate a saving yourself. You cannot apply one; the user applies it in the interface.",
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    execute: async (rawArgs) => {
+      emptyObjectSchema.parse(rawArgs ?? {});
+      const result = await getRecommendations(projectId, userId);
+      return {
+        recommendations: grants.viewCost
+          ? result.recommendations
+          : result.recommendations.map(recommendationWithoutMoney),
+        emptyReason: result.emptyReason,
+        note: 'Computed by the cutting engines. Report these figures exactly; do not calculate your own. The user applies a recommendation in the interface.',
+      };
+    },
+  });
+
+  /* ---- Cutting ----------------------------------------------------------- */
+
+  tools.push({
+    name: 'get_cutting_plans',
+    description:
+      'Read the computed cutting plans: which stock size, how many sheets or bars, the waste percentage, and any pieces the optimiser could NOT place. Unplaced pieces mean the plan does not cover the project — say which material and that those pieces do not fit. Never describe a layout that has not been computed.',
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    execute: async (rawArgs) => {
+      emptyObjectSchema.parse(rawArgs ?? {});
+      const [sheet, linear] = await Promise.all([
+        listPlans(projectId, userId),
+        listLinearPlans(projectId, userId),
+      ]);
+      // The SVG each view carries is a rendering, not information the model can
+      // use, and it is far larger than everything else put together, so it is
+      // dropped rather than sent.
+      const describe = (entry: { plan: CuttingPlan | null }) =>
+        entry.plan
+          ? {
+              materialId: entry.plan.materialId,
+              stockSize: entry.plan.stockSizeLabel,
+              stockUnitsUsed: entry.plan.stockUnitsUsed,
+              wastePercent: entry.plan.wastePercent.toString(),
+              unplacedCount: entry.plan.unplacedCount,
+            }
+          : null;
+
+      const stated = <T,>(value: T | null): value is T => value !== null;
+
+      return {
+        sheetPlans: sheet.map(describe).filter(stated),
+        linearPlans: linear.map(describe).filter(stated),
+        note: 'Computed by the cutting optimiser. Report these figures exactly.',
+      };
+    },
+  });
+
+  /* ---- Cost -------------------------------------------------------------- */
+
+  if (grants.viewCost) {
+    tools.push({
+      name: 'get_project_cost',
       description:
-        'Record information the user has actually stated. Send only the fields they gave you; omitted fields keep their current values. Send null to clear a field the user retracted. Never send a value the user did not state.',
-      parameters: SPEC_PATCH_JSON_SCHEMA as unknown as Record<string, unknown>,
+        'Read the internal cost breakdown computed by the cost engine: materials, labour, transport, installation, other expenses, margin, tax and totals, in minor currency units. Report these exactly. Never add to them, scale them, or price a change that has not been costed.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
       execute: async (rawArgs) => {
-        const patch = projectSpecPatchSchema.parse(rawArgs ?? {});
-        const view = await updateDraftSpec(projectId, userId, patch);
-        return { spec: view.spec, missing: view.missing, complete: view.complete };
+        emptyObjectSchema.parse(rawArgs ?? {});
+        await assertProjectPermission(projectId, userId, 'cost.view');
+        const [view, settings] = await Promise.all([
+          getProjectCost(projectId, userId),
+          getCostSettings(workspaceId),
+        ]);
+
+        if (!view.cost) {
+          return {
+            cost: null,
+            blockedReason: view.blockedReason,
+            note: 'No cost has been computed. Say what is missing; do not produce a figure.',
+          };
+        }
+
+        return {
+          currency: settings.currency,
+          cost: {
+            materialsCostCents: view.cost.materialsCostCents,
+            laborCostCents: view.cost.laborCostCents,
+            transportCostCents: view.cost.transportCostCents,
+            installCostCents: view.cost.installCostCents,
+            otherCostCents: view.cost.otherCostCents,
+            internalTotalCents: view.cost.internalTotalCents,
+            marginCents: view.cost.marginCents,
+            clientSubtotalCents: view.cost.clientSubtotalCents,
+            taxCents: view.cost.taxCents,
+            clientTotalCents: view.cost.clientTotalCents,
+            computedAt: view.cost.computedAt,
+          },
+          stale: view.stale,
+          note: view.stale
+            ? 'SUPERSEDED: computed before a later material calculation. Say it must be recalculated rather than presenting it as the current cost.'
+            : 'Computed by the cost engine. Report these figures exactly, in the currency given.',
+        };
       },
+    });
+  }
+
+  /* ---- Readiness --------------------------------------------------------- */
+
+  tools.push({
+    name: 'get_project_readiness',
+    description:
+      'Read the integrity report: everything the application has found wrong or missing across the specification, design, materials, cutting and cost, plus whether the project is ready to quote and ready for a production package. Use this to answer "wach wajed?" and to explain what is blocking a document. Report the findings given; do not invent additional ones.',
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    execute: async (rawArgs) => {
+      emptyObjectSchema.parse(rawArgs ?? {});
+      const report = await getIntegrityReport(projectId, userId);
+      return {
+        findings: report.findings,
+        summary: report.summary,
+        readiness: report.readiness,
+        note: 'Computed by the validation layer. A blocker genuinely refuses the action; a warning does not.',
+      };
     },
-  ];
+  });
+
+  return tools;
 }

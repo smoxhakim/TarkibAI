@@ -68,6 +68,12 @@ describe.skipIf(!enabled)('Moroccan Darija intake', () => {
           ).toBeUndefined();
         }
 
+        // Patterns the reply must not contain, each with its own reason.
+        if (testCase.replyMustNotMatch) {
+          const { pattern, because } = testCase.replyMustNotMatch;
+          expect(pattern.test(lastReply), `${because}\nreply: ${lastReply}`).toBe(false);
+        }
+
         // The agent must never claim it approved anything.
         expect(view.status).toBe('draft');
         expect(/\bapproved\b/i.test(lastReply)).toBe(false);

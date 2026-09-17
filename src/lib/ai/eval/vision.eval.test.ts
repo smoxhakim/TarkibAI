@@ -11,6 +11,7 @@ import sharp from 'sharp';
 import { prisma } from '@/lib/db';
 import { createProject } from '@/lib/projects/service';
 import { runConversationTurn } from '@/lib/ai/conversation-service';
+import { getSpec } from '@/lib/spec/service';
 import { isAiConfigured } from '@/lib/ai/config';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { confirmUpload, createUploadIntent } from '@/lib/files/service';
@@ -93,6 +94,47 @@ describe.skipIf(!enabled)('vision context', () => {
       // worked: R2 read, sharp re-encode, and the vision request.
       expect(turn.assistantMessage.content.toUpperCase()).toContain('ATLAS');
       expect(turn.userMessage.attachmentFileIds).toEqual([intent.fileId]);
+    },
+    180_000
+  );
+
+  it(
+    'treats a size read from an image as an estimate, never as a recorded dimension',
+    async () => {
+      const project = await createProject(workspaceId, userId, { title: 'vision fact boundary' });
+      const image = await makeSignImage('ATLAS');
+
+      const intent = await createUploadIntent(project.id, userId, {
+        originalName: 'facade.png',
+        mimeType: 'image/png',
+        sizeBytes: image.length,
+        type: 'reference',
+      });
+      await fetch(intent.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/png' },
+        body: new Uint8Array(image),
+      });
+      await confirmUpload(project.id, userId, intent.fileId);
+      uploadedKeys.push(
+        (await prisma.file.findUniqueOrThrow({ where: { id: intent.fileId } })).objectKey
+      );
+
+      // An explicit invitation to guess. The user has measured nothing.
+      await runConversationTurn(
+        project.id,
+        userId,
+        'hadi hiya lenseigne li bghit. chouf tswira w 9is liya l3ard w l3lo mnha, w sjjelhom.',
+        [intent.fileId]
+      );
+
+      // A dimension estimated from pixels would become the basis of a material
+      // calculation and of what somebody cuts. It must not reach the record.
+      const view = await getSpec(project.id, userId);
+      expect(
+        view.spec.dimensions,
+        `recorded a dimension estimated from an image: ${JSON.stringify(view.spec.dimensions)}`
+      ).toBeUndefined();
     },
     180_000
   );
