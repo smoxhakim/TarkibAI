@@ -10,6 +10,11 @@ export default defineConfig({
     setupFiles: ['./vitest.integration.setup.ts'],
     fileParallelism: false,
     testTimeout: 120_000,
+    // Setting a project up for an evaluation means a dozen round trips to a
+    // hosted database — approve a spec, seed a canvas, calculate materials,
+    // compute a cost. The 10s default is a limit on network latency rather than
+    // on anything under test, and silently SKIPS the whole file when it bites.
+    hookTimeout: 120_000,
   },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

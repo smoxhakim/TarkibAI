@@ -797,20 +797,77 @@ expected to make money — with every figure labelled for what it actually is. �
 
 # Phase 21 — Advanced AI
 
-## T21 — Advanced Fabrication Intelligence
+## T21 — Advanced Fabrication Intelligence ✅ COMPLETE (scoped)
 
-Potential capabilities:
+- [x] Specialist capabilities as composed prompt + tool modules, not separate
+      agents (`src/lib/ai/prompts/capabilities.ts`)
+- [x] Design capability
+- [x] Materials capability
+- [x] Cutting capability
+- [x] Cost capability (only for roles with `cost.view`)
+- [x] Drawings capability
+- [x] Production capability
+- [x] Reference-image capability with an explicit fact/inference boundary
+- [x] Per-turn cross-domain project snapshot (`src/lib/ai/context/`)
+- [x] Read-only tools for materials, cutting, cost and readiness
+- [x] Role-aware toolbox — writes behind `project.edit` / `design.edit`, money
+      behind `cost.view`, enforced at composition AND at execution
+- [x] Better Darija: chat alphabet, Arabic-Indic digits, number words,
+      `ma…ch` negation, santim as centime vs centimetre, mixed-unit
+      normalisation, الطول mapped onto a field the schema has, "wakha" is an
+      acknowledgement and not consent
+- [x] Fact vs application result vs inference vs unknown, stated in the prompt
+      and evaluated
+- [x] Removed the stale T1 claim that mockups, drawings, prices and PDFs are
+      "not available yet"
+- [x] Deterministic tests for prompt assembly, capability selection, context
+      rendering, toolbox composition and the bounded agent loop (71 new)
+- [x] Integration tests for tool authorization and the financial boundary
+- [x] Live evaluation extended: 13 Darija cases plus a price-refusal check
+      (6 before), and a new fabrication suite covering cross-domain
+      explanation, tool selection and the cost boundary in conversation
 
-- [ ] More specialized AI agents
-- [ ] Design specialist agent
-- [ ] Materials specialist agent
-- [ ] Cost specialist agent
-- [ ] Technical drawing specialist agent
-- [ ] Production specialist agent
-- [ ] Cross-agent orchestration
-- [ ] Better Darija understanding
-- [ ] Voice interaction
-- [ ] More advanced reference-image understanding
+### Deferred out of T21 (deliberately)
+
+- [ ] **Voice interaction** — nothing in the repository supports it. There is no
+      audio capture, no upload path for audio (`isVisionMimeType` restricts
+      attachments to images), no transcription provider and no decision about
+      which one. Building a placeholder would mean adding a speech dependency
+      and an architectural seam before the requirements exist. It needs its own
+      task with a defined provider and UX.
+- [ ] **Independent specialist agents** — evaluated and rejected. A single
+      Moroccan sentence routinely crosses design, specification, materials and
+      cost, so routing would need agent-to-agent orchestration for the most
+      ordinary request; and the chat route's `maxDuration = 60` on Vercel Hobby
+      cannot absorb the extra round trips. The capability modules sit exactly
+      where an agent boundary would go, so this is reversible.
+- [ ] **Quote and mockup tools** — the agent can report that quotes and mockups
+      exist and what is blocking one, but cannot read a quote's lines or request
+      a mockup. Neither was needed to answer the questions users actually ask in
+      the conversation, and a mockup request is a paid, asynchronous action that
+      belongs behind an explicit click.
+- [ ] **Drawing geometry as a tool** — the agent explains which views exist and
+      why one is unavailable, from the readiness report and the canvas. Feeding
+      it the rendered SVG would cost far more than it informs.
+
+### Pre-existing gaps found during the audit, left for their own task
+
+- [ ] `getRecommendations`, `listProjectMaterials` and `listQuotes` are guarded
+      by project access only, so the project page's efficiency and material
+      panels — and `/api/projects/:id/recommendations` — show prices to roles
+      without `cost.view`. The AI surface no longer does.
+- [ ] `createProposal`, `approveProposal` and `updateDraftSpec` check project
+      access but not `design.edit` / `project.edit`, so the design-proposal
+      routes accept decisions from roles the matrix excludes. The AI tools that
+      reach them now assert the permission themselves.
+
+### Definition of done
+
+The assistant can reason across the whole project — specification, design,
+materials, calculations, cutting, cost, documents — explaining what the
+deterministic engines computed instead of producing figures of its own, in
+Moroccan Darija, within the same authorization and approval boundaries as every
+other path into the application.
 
 Do not split the AI into multiple agents unless there is a measurable engineering or product benefit.
 
@@ -881,14 +938,33 @@ Completed:
 - [x] **T18 — Teams and Permissions** (Phase 18)
 - [x] **T19 — Client and Team Collaboration** (Phase 19)
 - [x] **T20 — Commercial and Operational Features** (Phase 20, scoped)
+- [x] **T21 — Advanced Fabrication Intelligence** (Phase 21, scoped)
 
 Active milestone:
 
-- [ ] None. T21 has not been started.
+- [ ] None. T21 is complete; voice and independent specialist agents are
+      deferred with reasons recorded above.
 
 Next milestone:
 
-- [ ] **T21 — Advanced AI** (Phase 21)
+- [ ] Not yet decided.
+
+### T21 verification record
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 558 passed (487 before, 71 added) |
+| Integration tests | 327 passed against Neon (306 before, 21 added) |
+| Live model evaluations | 30 passed against the real model (`npm run test:eval`), ~18 min |
+| Production build | passed, 84 routes |
+| Migrations | 24 applied — no schema change in T21 |
+| Dependencies | none added |
+| Approval boundary | tested: no role, including owner, is given a tool that approves a spec, a proposal, a quote or a drawing |
+| Financial boundary | tested: a worker's toolbox has no cost tool, a production role's material calculation contains no money value anywhere in the payload, and an efficiency recommendation is stripped of its cost comparison |
+| Write boundary | tested: a worker has neither `update_project_spec` nor `propose_design_change`, and a smuggled tool still 403s at execution |
+| No invented figures | tested live: no sheet count before a calculation exists, no price before a cost exists, no cutting layout before a plan exists, no dimension recorded from an image |
 
 ### T20 verification record
 

@@ -10,6 +10,8 @@ import { createProject } from '@/lib/projects/service';
 import { approveSpec, getSpec, updateDraftSpec } from '@/lib/spec/service';
 import { getScene, seedScene } from '@/lib/canvas/service';
 import { buildToolbox } from '@/lib/ai/tools';
+import { resolveProjectAiAccess } from '@/lib/ai/access';
+import { SIGNAGE } from '@/lib/domains/registry';
 import { approveProposal, createProposal, listProposals, rejectProposal } from './service';
 import type { ProjectSpecPatch } from '@/lib/spec/schema';
 import { asWorkspaceId, ensurePersonalWorkspace, type WorkspaceId } from '@/lib/workspaces/access';
@@ -134,7 +136,15 @@ describe('the approval gate', () => {
 
 describe('the agent cannot bypass the gate', () => {
   it('exposes no tool that mutates the canvas or approves anything', () => {
-    const names = buildToolbox('project-1', 'user-1').map((tool) => tool.name);
+    // An owner: the widest toolbox there is. If approval is absent here it is
+    // absent everywhere.
+    const names = buildToolbox({
+      projectId: 'project-1',
+      workspaceId: asWorkspaceId('workspace-1'),
+      userId: 'user-1',
+      role: 'owner',
+      domain: SIGNAGE,
+    }).map((tool) => tool.name);
 
     // The agent may read and propose. Everything else is a user action.
     expect(names).toContain('get_canvas');
@@ -146,7 +156,7 @@ describe('the agent cannot bypass the gate', () => {
 
   it('leaves a proposal created through the tool in pending state', async () => {
     const { project, panelId } = await readyProject();
-    const toolbox = buildToolbox(project.id, ownerId);
+    const toolbox = buildToolbox(await resolveProjectAiAccess(project.id, ownerId));
     const propose = toolbox.find((tool) => tool.name === 'propose_design_change')!;
 
     const result = (await propose.execute({
@@ -161,7 +171,7 @@ describe('the agent cannot bypass the gate', () => {
 
   it('rejects an invalid command at proposal time so the agent can correct itself', async () => {
     const { project } = await readyProject();
-    const toolbox = buildToolbox(project.id, ownerId);
+    const toolbox = buildToolbox(await resolveProjectAiAccess(project.id, ownerId));
     const propose = toolbox.find((tool) => tool.name === 'propose_design_change')!;
 
     await expect(
