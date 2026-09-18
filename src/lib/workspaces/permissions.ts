@@ -65,8 +65,15 @@ export const PERMISSIONS = [
   'cost.view',
   /** The costing rules that produce them. */
   'cost.manage',
+  /** Read client quotations and their figures. */
   'quote.view',
-  /** Create, edit and issue client quotations. */
+  /**
+   * Write client quotations: create, edit, issue and delete.
+   *
+   * The single quote WRITE permission. Reading one is `quote.view`, which the
+   * production role holds without this — so anything that changes a quotation
+   * must check this rather than settling for the reader's permission.
+   */
   'quote.create',
   'production.view',
   'production.generate',

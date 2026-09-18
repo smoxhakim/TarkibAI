@@ -982,6 +982,96 @@ so the routes, the pages and the AI tools all inherit one answer.
 | Role coverage | all six roles, split by the matrix rather than hardcoded |
 | Boundary proof | asserted on the returned payload — the unit price does not appear as a value anywhere in it, at any depth |
 
+### Security hardening — the zero-price diagnostic
+
+A second leak on the same boundary, fixed separately. `checkMaterials` emits
+`material.zero_price` ("X is priced at zero, so it will add nothing to the
+cost") and the integrity report returned it to every project member. It survived
+the cost-visibility pass because its `area` is `materials`, not `cost`, and both
+that pass and the T18 test guarding it keyed on area.
+
+- [x] Leak reproduced first: designer, production and worker all received the
+      code, the message and the action
+- [x] `FINANCIAL_FINDING_CODES` names findings whose meaning is a price, so a
+      new one has to be registered deliberately rather than inheriting an area
+- [x] `getIntegrityReport` projects them away before sorting, counting and
+      blocker selection, so a withheld finding cannot return as a summary count
+      or as the reason a document was refused
+- [x] The deterministic checks stay pure and permission-agnostic
+- [x] Non-financial material warnings preserved — tested that a cost-blind role
+      still gets `material.no_requirement` on the same material
+- [x] Two unit tests keep the set honest against drift
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 561 passed (558 before, 3 added) |
+| Integration tests | 378 total (364 before, 14 added); 377 passed, 1 environmental flake — a Prisma 5s interactive-transaction timeout in `approveSpec` during another suite's setup, which passes on re-run |
+| Production build | passed, 84 routes |
+| Role coverage | all six roles, derived from the matrix |
+| Boundary proof | no trace of "priced at zero", "add nothing to the cost" or "Set its price" anywhere in a cost-blind role's serialised report |
+
+### Security hardening — the quote safety gate
+
+The third finding from the cost-visibility audit, and the only one that was not
+an information leak: `cost.view` was disabling a safety gate. `issueQuote` reads
+its blockers from the integrity report, which omitted the cost section for a
+caller without the permission — so `cost.stale` and `cost.missing` did not exist
+for them and the gate did not fire.
+
+- [x] Reproduced first: a production manager (holds `quote.view`, not
+      `cost.view`) issued quotes on both a stale and a missing cost, where sales
+      was correctly refused
+- [x] Every deterministic check now runs for every reader; only the presentation
+      narrows, and it narrows after the checks, never before
+- [x] `readCostReadiness` returns `{exists, stale, blockedReason}` and no
+      amounts, so validation cannot leak a figure it was never given
+- [x] One stale-cost algorithm: `getProjectCost` and `readCostReadiness` both
+      call `loadCostState`
+- [x] `financialCodesThatGate()` asserts nothing hidden for visibility can gate
+      a document, so this class of bug cannot be reintroduced quietly
+- [x] Refusal messages carry no amount, currency or total — asserted
+- [x] The internal cost row is still refused to production (`403`) — the safety
+      fix did not widen the visibility boundary
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 564 passed (561 before, 3 added) |
+| Integration tests | 391 passed against Neon (378 before, 13 added) |
+| Production build | passed, 84 routes |
+| Role coverage | owner, sales, production — the roles the gap turns on |
+| Invariant | same project state and quote → same issuance decision, whatever the caller may see |
+
+### Security hardening — quote write permissions
+
+The last of the four findings from the cost-visibility audit. `updateQuote`,
+`deleteQuote` and `issueQuote` all loaded their row through `loadQuote`, which
+checks `quote.view` — the READ permission — so the production role could change
+and issue client quotations it was never meant to write.
+
+- [x] Reproduced first: production updated, deleted and issued a quotation
+- [x] No new permission. `quote.create` already exists and is defined as the
+      quote write permission; the matrix already withholds it from production
+- [x] `loadQuoteForWrite` layers the write check on the read one, so 404 and 403
+      stay distinguishable
+- [x] Document reads (`renderQuote`, `quoteDownloadUrl`, `buildQuoteDocument`)
+      stay on `quote.view` — verified they perform no write
+- [x] Authorization runs before Task 3's safety gate and before any mutation
+- [x] UI mutation controls gated; the service remains authoritative
+- [x] No quote mutation AI tools exist, and none were created
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 564 passed |
+| Integration tests | see the verification run |
+| Production build | passed, 84 routes |
+| Role coverage | all six, split by `can(role, …)` rather than hardcoded |
+
 ### T21 verification record
 
 | Check | Result |

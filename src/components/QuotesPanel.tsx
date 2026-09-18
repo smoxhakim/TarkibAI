@@ -79,6 +79,7 @@ export function QuotesPanel({
   costBlockedReason,
   mockups,
   currency,
+  canWrite,
 }: {
   projectId: string;
   active: ActiveQuote | null;
@@ -90,6 +91,12 @@ export function QuotesPanel({
   costBlockedReason: string | null;
   mockups: MockupOption[];
   currency: string;
+  /**
+   * Whether this reader holds `quote.create`. Secondary to the service, which
+   * refuses the write regardless — this only stops offering an action that
+   * would be refused.
+   */
+  canWrite: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -270,6 +277,7 @@ export function QuotesPanel({
                 type="button"
                 disabled={busy !== null || client.name.trim() === ''}
                 onClick={create}
+                {...(canWrite ? {} : { disabled: true })}
                 className="mt-3 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy === 'create' ? t.creating : t.create}
@@ -428,6 +436,7 @@ export function QuotesPanel({
                 type="button"
                 disabled={busy !== null}
                 onClick={saveLines}
+                {...(canWrite ? {} : { disabled: true })}
                 className="rounded-md border border-line px-3 py-1.5 text-sm transition-colors hover:bg-surface-muted disabled:opacity-50"
               >
                 {busy === 'lines' ? t.savingLines : t.saveLines}
@@ -488,6 +497,7 @@ export function QuotesPanel({
                   className={inputClass}
                   value={active.mockupId ?? ''}
                   onChange={(e) => setMockup(e.target.value)}
+                  {...(canWrite ? {} : { disabled: true })}
                 >
                   <option value="">{t.mockupNone}</option>
                   {mockups.map((mockup) => (
@@ -538,6 +548,7 @@ export function QuotesPanel({
                   type="button"
                   disabled={busy !== null || blockers.length > 0}
                   onClick={issue}
+                  {...(canWrite ? {} : { disabled: true })}
                   className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {busy === 'issue' ? t.issuing : t.issue}
@@ -546,6 +557,7 @@ export function QuotesPanel({
                   type="button"
                   disabled={busy !== null}
                   onClick={remove}
+                  {...(canWrite ? {} : { disabled: true })}
                   className="text-sm text-ink-muted underline-offset-2 hover:text-danger hover:underline disabled:opacity-50"
                 >
                   {t.delete}

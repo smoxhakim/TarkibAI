@@ -58,6 +58,9 @@ describe('cost visibility', () => {
     // Issuing a quote without cost visibility would mean pricing blind.
     for (const role of WORKSPACE_ROLES) {
       if (can(role, 'quote.create')) expect(can(role, 'cost.view')).toBe(true);
+      // Writing a quotation you cannot read would be a nonsense state, and the
+      // write gate is layered on the read one, so it could never be reached.
+      if (can(role, 'quote.create')) expect(can(role, 'quote.view')).toBe(true);
     }
   });
 });

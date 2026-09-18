@@ -33,6 +33,7 @@ import { computeProjectCost, getProjectCost, updateCostSettings } from '@/lib/ca
 import { addPiece } from '@/lib/calc/cutting/service';
 import { getRecommendations } from '@/lib/calc/efficiency/service';
 import { getPurchasePlan } from '@/lib/commercial/service';
+import { getIntegrityReport } from '@/lib/validation/service';
 import { createQuote, getQuoteView, listQuotes } from '@/lib/quotes/service';
 import { updateQuoteSettings } from '@/lib/quotes/settings-service';
 import { asWorkspaceId, type WorkspaceId } from '@/lib/workspaces/access';
@@ -45,6 +46,8 @@ const userIds = {} as Record<WorkspaceRole, string>;
 let workspaceId: WorkspaceId;
 let projectId: string;
 let quoteId: string;
+/** A second project carrying a zero-priced material, for the integrity report. */
+let zeroPriceProjectId: string;
 
 /** The unit price of the project's material, in minor units. Must never leak. */
 const UNIT_PRICE_CENTS = 45_000;
@@ -151,6 +154,28 @@ beforeAll(async () => {
 
   const quote = await createQuote(projectId, owner, { clientName: 'Restaurant Atlas' });
   quoteId = quote.id;
+
+  // A separate project so the material assertions above keep their single line.
+  // Its material is priced at zero and has no requirement, which produces one
+  // FINANCIAL finding (material.zero_price) and one non-financial one
+  // (material.no_requirement) from the same check — so a test can tell the
+  // difference between withholding the money and silencing the whole report.
+  const freebie = await createMaterial(workspaceId, owner, {
+    name: 'Client-supplied panel',
+    category: 'Panel',
+    customCategory: false,
+    measurementModel: 'sheet',
+    sheetWidthMm: 2440,
+    sheetHeightMm: 1220,
+    unitPriceCents: 0,
+  });
+  const zeroPriceProject = await createProject(workspaceId, owner, {
+    title: `Zero price ${suffix}`,
+  });
+  zeroPriceProjectId = zeroPriceProject.id;
+  await updateDraftSpec(zeroPriceProjectId, owner, COMPLETE_SPEC);
+  await approveSpec(zeroPriceProjectId, owner);
+  await selectProjectMaterial(zeroPriceProjectId, owner, freebie.id, 'Face');
 });
 
 afterAll(async () => {
@@ -265,6 +290,60 @@ describe('the purchase plan', () => {
     const plan = await getPurchasePlan(projectId, userIds[role]);
     expect(plan.showsPrices).toBe(false);
     expect(numbersIn(plan)).not.toContain(UNIT_PRICE_CENTS);
+  });
+});
+
+describe('the integrity report', () => {
+  const codes = async (role: WorkspaceRole) =>
+    (await getIntegrityReport(zeroPriceProjectId, userIds[role])).findings.map((f) => f.code);
+
+  it.each(withCost)('tells %s that a material is priced at zero', async (role) => {
+    expect(await codes(role)).toContain('material.zero_price');
+  });
+
+  it.each(withoutCost)('withholds the zero-price diagnostic from %s', async (role) => {
+    // "priced at zero" is a statement about a price. It sits under area
+    // "materials" rather than "cost", which is exactly why the area-based
+    // check in the T18 tests never caught it.
+    expect(await codes(role)).not.toContain('material.zero_price');
+  });
+
+  it.each(withoutCost)('still gives %s the non-financial material warnings', async (role) => {
+    // Withholding the money must not silence the report: the same material has
+    // no requirement recorded, and that is theirs to see.
+    expect(await codes(role)).toContain('material.no_requirement');
+  });
+
+  it.each(withoutCost)('leaves no trace of the price in %s\'s report', async (role) => {
+    const report = await getIntegrityReport(zeroPriceProjectId, userIds[role]);
+    const serialised = JSON.stringify(report);
+
+    // Not just the code: the message and the action say it too.
+    expect(serialised).not.toMatch(/priced at zero/i);
+    expect(serialised).not.toMatch(/add nothing to the cost/i);
+    expect(serialised).not.toMatch(/Set its price/i);
+  });
+
+  it('counts only the findings the reader was actually given', async () => {
+    const worker = await getIntegrityReport(zeroPriceProjectId, userIds.worker);
+    const owner = await getIntegrityReport(zeroPriceProjectId, userIds.owner);
+
+    // A summary that counted a withheld finding would tell the worker there is
+    // a warning they cannot see.
+    expect(worker.summary.warning).toBe(worker.findings.filter((f) => f.severity === 'warning').length);
+    expect(owner.summary.warning).toBeGreaterThan(worker.summary.warning);
+  });
+
+  it('never lets the zero-price warning gate a document', async () => {
+    // Withholding a finding could only change what somebody may produce if that
+    // finding were a blocker. This one is a warning by design — buying material
+    // for nothing is unusual, not wrong — so removing it from a cost-blind
+    // reader's report cannot make the project look readier than it is.
+    const owner = await getIntegrityReport(zeroPriceProjectId, userIds.owner);
+    expect(owner.findings.map((f) => f.code)).toContain('material.zero_price');
+
+    const gating = [...owner.readiness.quote.blockers, ...owner.readiness.production.blockers];
+    expect(gating.map((f) => f.code)).not.toContain('material.zero_price');
   });
 });
 

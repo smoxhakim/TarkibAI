@@ -46,6 +46,81 @@ export type Finding = {
   subject: string | null;
 };
 
+/**
+ * Findings whose MEANING is a price, wherever they happen to be filed.
+ *
+ * `area` is about which part of the project a finding concerns, not about who
+ * may read it, and the two do not line up: `material.zero_price` says "this
+ * material is priced at zero" and sits under `materials`, because that is where
+ * a user would look for it. Dropping the `cost` area for a reader without
+ * `cost.view` therefore left it in place — the report still told a worker what
+ * a material was priced at.
+ *
+ * So the financial ones are named here rather than inferred from the area. A
+ * new check that reveals a price has to be added to this set, which is a line
+ * a reviewer can see, instead of silently inheriting whichever area its author
+ * happened to choose.
+ *
+ * The engine keeps producing them: it is pure, and it has no business knowing
+ * who is asking. `getIntegrityReport` projects them away.
+ */
+export const FINANCIAL_FINDING_CODES: ReadonlySet<string> = new Set(['material.zero_price']);
+
+/* -------------------------------------------------------------------------- */
+/* What each document refuses to be built from                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Findings that make a priced document wrong.
+ *
+ * A quote's price rests on every material line being current and complete. A
+ * line that is stale, missing or uncalculable means the total is missing
+ * something, and the client would be quoted a number the system knows is not
+ * the project's.
+ */
+export const QUOTE_BLOCKING_CODES: ReadonlySet<string> = new Set([
+  'calculation.stale',
+  'calculation.missing',
+  'calculation.unsupported',
+  'material.missing_stock_size',
+  'cost.stale',
+  'cost.missing',
+]);
+
+/**
+ * Findings that make a workshop sheet wrong.
+ *
+ * Deliberately narrower. A package may be built from a drawing alone, and T14
+ * prints what it does not contain rather than refusing — absent data is a gap,
+ * stated on the document. What is blocked here is data that is present and
+ * WRONG: figures superseded by a later change, and pieces the optimiser could
+ * not place, which a plan would otherwise imply are being cut.
+ */
+export const PRODUCTION_BLOCKING_CODES: ReadonlySet<string> = new Set([
+  'calculation.stale',
+  'calculation.unsupported',
+  'cutting.unplaced',
+]);
+
+/**
+ * A finding withheld for VISIBILITY must never be one that gates a document.
+ *
+ * This is the rule the quote gate was broken by. The integrity report skipped
+ * the cost checks for a reader without `cost.view`, the issue gate read its
+ * blockers from that report, and `cost.stale` therefore did not exist for the
+ * one role that can issue a quote without seeing costs. A permission decided a
+ * safety question.
+ *
+ * Both sets live here so that the overlap between "hidden" and "blocking" is
+ * one expression a unit test can evaluate, rather than something a reviewer has
+ * to notice across two files.
+ */
+export function financialCodesThatGate(): string[] {
+  return [...FINANCIAL_FINDING_CODES].filter(
+    (code) => QUOTE_BLOCKING_CODES.has(code) || PRODUCTION_BLOCKING_CODES.has(code)
+  );
+}
+
 const MM_PER: Record<LengthUnit, number> = { mm: 1, cm: 10, m: 1000 };
 
 /* -------------------------------------------------------------------------- */

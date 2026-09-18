@@ -106,9 +106,14 @@ async function latestMaterialCalculation(projectId: string): Promise<Date | null
  * reasoning as the client-safe quote boundary, applied to a second audience
  * (PRD 23: cost visibility is a permission).
  */
-export async function getProjectCost(projectId: string, userId: string): Promise<CostView> {
-  await assertProjectPermission(projectId, userId, 'cost.view');
-
+/**
+ * The project's cost and whether it is current. NO permission check.
+ *
+ * The one implementation of "is this cost stale", so the answer cannot differ
+ * between the panel that displays it and the gate that refuses a document
+ * because of it. Both callers below go through here.
+ */
+async function loadCostState(projectId: string): Promise<CostView> {
   const [cost, materialsCalculatedAt] = await Promise.all([
     prisma.projectCost.findFirst({ where: { projectId }, orderBy: { computedAt: 'desc' } }),
     latestMaterialCalculation(projectId),
@@ -131,6 +136,45 @@ export async function getProjectCost(projectId: string, userId: string): Promise
     materialsCalculatedAt > cost.materialsCalculatedAt;
 
   return { cost, stale, blockedReason: null };
+}
+
+export async function getProjectCost(projectId: string, userId: string): Promise<CostView> {
+  await assertProjectPermission(projectId, userId, 'cost.view');
+  return loadCostState(projectId);
+}
+
+/**
+ * Whether the cost is present and current — with no amounts in it.
+ *
+ * # Why this is not permission-checked
+ *
+ * `cost.view` answers "may this person SEE the figures". It does not answer "is
+ * this project safe to quote from", and the two were coupled: the integrity
+ * report skipped the cost checks entirely for a caller without the permission,
+ * and the quote gate read its blockers from that report. `cost.stale` therefore
+ * did not exist for a production manager — the one role that holds `quote.view`
+ * without `cost.view` — so they could issue a client a quote priced from
+ * figures the system already knew were superseded.
+ *
+ * Safety validation has to see the real state whoever is asking. What keeps
+ * that honest is the RETURN TYPE: three facts, no `ProjectCost` row, no
+ * amounts. A caller cannot leak a figure it was never given, so this can be
+ * read on behalf of somebody who may not see the cost without widening what
+ * they may see.
+ *
+ * Never return this to a client as-is, and never add an amount to it.
+ */
+export type CostReadiness = {
+  exists: boolean;
+  /** Computed after a later material calculation than the one it was built on. */
+  stale: boolean;
+  /** Why no cost could be computed, when that is known. Carries no figure. */
+  blockedReason: string | null;
+};
+
+export async function readCostReadiness(projectId: string): Promise<CostReadiness> {
+  const { cost, stale, blockedReason } = await loadCostState(projectId);
+  return { exists: cost !== null, stale, blockedReason };
 }
 
 /**

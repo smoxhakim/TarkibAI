@@ -968,7 +968,7 @@ API still answers, and the reader only has to call it directly. So:
 | `listProjectMaterials` | **withhold the money** | quantities are not costs: production orders the sheets and a worker cuts them |
 | `getRecommendations` | **withhold the money** | fewer units and less waste are actionable without the price |
 | `getPurchasePlan` | **withhold the money** | the order quantities are what production needs |
-| `getIntegrityReport` | **omit the cost section** | the rest of the report is still theirs |
+| `getIntegrityReport` | **project away financial findings** | the checks all still run; only the figures are withheld |
 | `listQuotes`, `loadQuote` | **refuse**, on `quote.view` | see below |
 
 Where a service withholds rather than refuses, the monetary fields come back
@@ -980,6 +980,68 @@ until somebody adds it to that list deliberately.
 Withholding is decided once, in the service. The AI tools, the HTTP routes and
 the server components all inherit the same answer rather than each carrying
 their own idea of what counts as money.
+
+**Visibility never decides a safety question.** `cost.view` answers "may this
+person see the figures". It does not answer "is this project safe to quote
+from", and for a while it answered both: the integrity report skipped the cost
+checks entirely for a reader without the permission, and the quote gate read its
+blockers from that report. `cost.stale` therefore did not exist for a production
+manager — the one role holding `quote.view` without `cost.view` — who could send
+a client a quote priced from figures the system already knew were superseded.
+
+Every check now runs for every reader, and only the PRESENTATION narrows. The
+order is the rule: a check that does not run is a blocker that does not exist.
+
+```
+project state ──→ every deterministic check ──┬──→ gates (permission-independent)
+                                              └──→ visible findings (projected)
+```
+
+`cost.stale` and `cost.missing` state that a cost is out of date or absent and
+name no amount, so they are not withheld from anyone — they are safety
+statements, and the people who can act on a project need them. The cost read
+behind them is `readCostReadiness`, which returns three facts and no
+`ProjectCost` row: validation cannot leak a figure it was never given.
+
+`financialCodesThatGate()` asserts the overlap between "hidden" and "gating" is
+empty, so this cannot be reintroduced by adding a financial check that happens
+to be a blocker.
+
+**A finding's area is not a proxy for who may read it.** The integrity report
+files each finding under the part of the project it concerns, which is where a
+user would look for it — so `material.zero_price` ("this material is priced at
+zero") sits under `materials`, not under `cost`. Dropping the cost SECTION
+therefore left it in place, and the report told a worker what a material was
+priced at. Financial findings are named explicitly in `FINANCIAL_FINDING_CODES`
+and projected away before the report is sorted, counted or turned into a
+blocker, so a withheld finding cannot reappear as a summary count or as the
+reason a document was refused. The pure checks still produce them: the engine
+has no business knowing who is asking.
+
+### Reading a quote and writing one are different permissions
+
+TARKIB has exactly two quote permissions and they already drew this line:
+`quote.view` reads a quotation, `quote.create` is the single quote WRITE
+permission — create, edit, issue and delete. The matrix grants `quote.view` to
+the production role and deliberately withholds `quote.create`.
+
+It was not enforced. Every quote operation loaded its row through `loadQuote`,
+which checks the READ permission, so production could rename a client's
+quotation, delete it, or issue it to the client. `loadQuoteForWrite` now layers
+the write check on top of that read, the same shape as
+`assertMaterialManagement` in the material library: access first, then the
+capability. Layering rather than replacing keeps the two failures
+distinguishable — a quote on a project you cannot see is a 404, one you may read
+but not change is a 403 naming the permission you lack.
+
+| Operation | Permission |
+| --- | --- |
+| `listQuotes`, `getQuoteView` | `quote.view` |
+| `buildQuoteDocument`, `renderQuote`, `quoteDownloadUrl` | `quote.view` — bytes out, no state change |
+| `createQuote`, `updateQuote`, `deleteQuote`, `issueQuote` | **`quote.create`** |
+
+Authorization runs before the safety gate, so a caller who may not write a quote
+is refused before the integrity check and before anything is frozen.
 
 ### Quotes are guarded by `quote.view`, not by `cost.view`
 
@@ -2785,3 +2847,68 @@ alongside this. It now forwards what the services return. Two implementations of
 "what counts as money" is one more than can be kept in agreement, and the AI
 tests that assert no figure reaches a cost-blind role still pass — now proving
 the service's behaviour instead of the toolbox's.
+
+### Security hardening — the zero-price diagnostic
+
+A second, smaller leak on the same boundary, found while auditing the first and
+fixed separately. `checkMaterials` emits `material.zero_price` — *"X is priced
+at zero, so it will add nothing to the cost"* — and `getIntegrityReport`
+returned it to every project member. Reproduced before the fix: designer,
+production and worker all received the code, the message and the action.
+
+It survived the cost-visibility pass, and the T18 test written to catch exactly
+this kind of thing, because both asked the same wrong question. The test asserts
+`finding.area !== 'cost'` for a worker, and this finding's area is `materials`.
+Area describes what a finding is ABOUT so a user can find it; it says nothing
+about who may read it. Those two classifications were never the same, and using
+one for the other left the gap.
+
+The fix is a named set rather than a rule derived from the data: a check that
+reveals a price has to be added to `FINANCIAL_FINDING_CODES`, which a reviewer
+can see in a diff, instead of inheriting whichever area its author picked. The
+projection happens in the service, before sorting, counting and blocker
+selection — the deterministic checks stay pure and permission-agnostic, which is
+what lets them be unit-tested without a database.
+
+Two unit tests keep the set honest: every code in it must actually be produced
+by some check, and every finding outside the `cost` area whose text mentions a
+price must be in it. A set that drifts out of step with the checks protects
+nothing.
+
+### Security hardening — the quote safety gate
+
+The third and last finding from the cost-visibility audit, and the only one that
+was not an information leak: a *permission* was silently disabling a *safety
+gate*.
+
+`issueQuote` refuses a quote whose cost is stale or missing, via
+`blockersFor('quote', projectId, userId)` → `getIntegrityReport(projectId,
+userId)`. That report omitted the whole cost section for a caller without
+`cost.view`, so for them `cost.stale` and `cost.missing` did not exist and the
+gate did not fire. Reproduced before the fix: a production manager — who holds
+`quote.view` and not `cost.view` — issued quotes on both a stale and a missing
+cost, where sales was correctly refused.
+
+Two things had been conflated, and the fix is to stop conflating them rather
+than to route around it:
+
+- **Visibility** is a permission. It decides what a reader is shown.
+- **Validation** is deterministic. It decides what the system will allow.
+
+So every check now runs for everyone and the projection happens afterwards, on
+presentation only. No second stale-cost algorithm was written: `getProjectCost`
+and the new `readCostReadiness` both call one `loadCostState`, and the second
+returns `{exists, stale, blockedReason}` with no amounts — which is what makes
+it safe to read on behalf of somebody who may not see the cost.
+
+Rejected: granting `cost.view` to quote viewers (widens a boundary to fix a gate),
+and re-deriving staleness inside `issueQuote` (a second implementation of a rule
+that must have one answer).
+
+The cost blockers are now visible to every project member, which is a deliberate
+widening of the T18 presentation rule. It is safe because neither message states
+a figure, and the unit tests assert that. The T18 test that guarded the old rule
+asserted `finding.area !== 'cost'` — wrong twice: it let "priced at zero"
+through, since that finding is filed under materials, and it hid the two
+findings that stop a bad quote. It now asserts that no FIGURE reaches a worker,
+which is the rule that was always meant.

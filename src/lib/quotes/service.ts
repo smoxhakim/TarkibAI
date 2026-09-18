@@ -73,6 +73,30 @@ async function loadQuote(quoteId: string, userId: string): Promise<QuoteWithLine
   return quote;
 }
 
+/**
+ * A quote the caller may CHANGE.
+ *
+ * Reading a quotation and writing one are separate permissions, and the matrix
+ * already says so: `quote.create` is defined as "Create, edit and issue client
+ * quotations", and it is deliberately withheld from the production role that
+ * `quote.view` is granted to. Every write reached this file through `loadQuote`
+ * though, which checks the READ permission — so production could rename a
+ * client's quotation, delete it, or issue it.
+ *
+ * Layered on `loadQuote` rather than replacing it, so the two failures stay
+ * distinguishable and keep the conventions the rest of the app uses: a quote on
+ * a project you cannot see is 404, and one you may read but not change is a 403
+ * naming the permission you lack.
+ *
+ * The same pattern as `assertMaterialManagement` in the material library:
+ * access first, then the capability.
+ */
+async function loadQuoteForWrite(quoteId: string, userId: string): Promise<QuoteWithLines> {
+  const quote = await loadQuote(quoteId, userId);
+  await assertProjectPermission(quote.projectId, userId, 'quote.create');
+  return quote;
+}
+
 /** The workspace whose company block and rules a quote belongs to. */
 async function quoteWorkspace(quote: { projectId: string }): Promise<WorkspaceId> {
   const project = await prisma.project.findUniqueOrThrow({
@@ -315,7 +339,7 @@ export async function updateQuote(
   userId: string,
   input: UpdateQuotePayload
 ): Promise<QuoteWithLines> {
-  const quote = await loadQuote(quoteId, userId);
+  const quote = await loadQuoteForWrite(quoteId, userId);
   if (quote.status === 'issued') {
     throw badRequest(
       `Quote ${quote.number} has been issued and cannot be edited. Create a new quote instead — the client is holding a document with that number on it.`
@@ -381,7 +405,7 @@ export async function updateQuote(
 }
 
 export async function deleteQuote(quoteId: string, userId: string): Promise<void> {
-  const quote = await loadQuote(quoteId, userId);
+  const quote = await loadQuoteForWrite(quoteId, userId);
   if (quote.status === 'issued') {
     throw badRequest(
       `Quote ${quote.number} has been issued and is part of the record. It cannot be deleted.`
@@ -553,7 +577,7 @@ export async function renderQuote(quoteId: string, userId: string): Promise<Buff
  * document that will need a job.
  */
 export async function issueQuote(quoteId: string, userId: string): Promise<QuoteWithLines> {
-  const quote = await loadQuote(quoteId, userId);
+  const quote = await loadQuoteForWrite(quoteId, userId);
   if (quote.status === 'issued') {
     throw badRequest(`Quote ${quote.number} has already been issued.`);
   }
