@@ -2905,6 +2905,16 @@ Rejected: granting `cost.view` to quote viewers (widens a boundary to fix a gate
 and re-deriving staleness inside `issueQuote` (a second implementation of a rule
 that must have one answer).
 
+The quote-write hardening below then closed the same hole at a second layer:
+issuing requires `quote.create`, which production does not hold, so a cost-blind
+caller no longer reaches this gate through the matrix at all. That does not make
+this fix redundant — `blockersFor` also gates the production package, which
+`production.generate` reaches and production holds; the readiness verdict is
+read by every role through the panel and the AI tool; and a matrix that ever
+grants `quote.create` without `cost.view` would need the gate to hold on its
+own. The invariant is therefore asserted on the blocker computation rather than
+by having a role issue a quote it may no longer issue.
+
 The cost blockers are now visible to every project member, which is a deliberate
 widening of the T18 presentation rule. It is safe because neither message states
 a figure, and the unit tests assert that. The T18 test that guarded the old rule

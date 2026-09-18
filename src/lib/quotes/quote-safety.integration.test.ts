@@ -9,13 +9,21 @@
  * They were coupled. The integrity report omitted the whole cost section for a
  * role without `cost.view`, and `issueQuote` derived its blockers from that
  * report — so `cost.stale` and `cost.missing` simply did not exist for such a
- * caller, and the gate they exist to enforce did not fire. A production manager
- * holds `quote.view` and not `cost.view`, which made them the one role that
- * could send a client a quote priced from figures the system already knew were
- * superseded.
+ * caller, and the gate they exist to enforce did not fire.
  *
- * The invariant these tests hold: for the same project state and the same
- * quote, the issuance decision is identical whatever the caller may see.
+ * The quote-write hardening that followed closed the same hole at a second
+ * layer: issuing now requires `quote.create`, which production does not hold,
+ * so a cost-blind caller no longer reaches this gate through the role matrix at
+ * all. That does NOT make the fix below redundant. `blockersFor` is also what
+ * gates the production package, which `production.generate` reaches and
+ * production holds; the readiness verdict is read by every role through the
+ * panel and the AI; and if the matrix ever grants `quote.create` without
+ * `cost.view`, the gate has to hold on its own.
+ *
+ * So the invariant is asserted where it actually lives — the blocker
+ * computation — rather than by having a role issue a quote it may no longer
+ * issue: for the same project state, the safety decision is identical whatever
+ * the caller may see.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
@@ -167,13 +175,15 @@ describe('a stale cost blocks issuance', () => {
     expect((await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } })).status).toBe('draft');
   });
 
-  it('for production, who cannot', async () => {
+  it('refuses production earlier still, at authorization', async () => {
     const { project, quote } = await quotedProject();
     await makeCostStale(project.id);
 
-    // The same project state and the same quote: the decision must not turn on
-    // what the person asking is allowed to see.
-    await expect(issueQuote(quote.id, productionId)).rejects.toMatchObject({ status: 400 });
+    // Production may not issue a quote at all now (`quote.create`), so it is
+    // turned away before the safety gate rather than by it — 403, not 400. The
+    // gate's own independence from `cost.view` is asserted below, on the
+    // blockers themselves.
+    await expect(issueQuote(quote.id, productionId)).rejects.toMatchObject({ status: 403 });
     expect((await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } })).status).toBe('draft');
   });
 
@@ -197,11 +207,11 @@ describe('a missing cost blocks issuance', () => {
     await expect(issueQuote(quote.id, salesId)).rejects.toMatchObject({ status: 400 });
   });
 
-  it('for production, who cannot', async () => {
+  it('refuses production earlier still, at authorization', async () => {
     const { project, quote } = await quotedProject();
     await makeCostMissing(project.id);
 
-    await expect(issueQuote(quote.id, productionId)).rejects.toMatchObject({ status: 400 });
+    await expect(issueQuote(quote.id, productionId)).rejects.toMatchObject({ status: 403 });
     expect((await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } })).status).toBe('draft');
   });
 
@@ -223,25 +233,29 @@ describe('a current cost does not block anyone', () => {
     expect(await blockersFor('quote', project.id, salesId)).toEqual([]);
   });
 
-  it('lets production issue', async () => {
+  it('clears the gate for production too, who cannot see the cost', async () => {
     const { project } = await quotedProject();
+    // The safety decision, computed for a cost-blind caller. Whether they may
+    // then act on it is a separate permission.
     expect(await blockersFor('quote', project.id, productionId)).toEqual([]);
   });
 
-  it.runIf(isStorageConfigured())('issues end to end for production', async () => {
+  it.runIf(isStorageConfigured())('issues end to end for sales', async () => {
     const { quote } = await quotedProject();
-    const issued = await issueQuote(quote.id, productionId);
+    const issued = await issueQuote(quote.id, salesId);
     expect(issued.status).toBe('issued');
     expect(issued.issuedAt).not.toBeNull();
   });
 });
 
 describe('being blocked tells nobody what the cost is', () => {
-  it('refuses production without naming a figure', async () => {
+  it('refuses a cost-blind reader without naming a figure', async () => {
     const { project, quote } = await quotedProject();
     await makeCostStale(project.id);
 
-    const error = await issueQuote(quote.id, productionId).catch((caught: Error) => caught);
+    // Sales may issue and may see costs; the refusal still states no amount,
+    // which is what a cost-blind caller would also receive from the gate.
+    const error = await issueQuote(quote.id, salesId).catch((caught: Error) => caught);
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
 

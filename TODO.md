@@ -1068,7 +1068,7 @@ and issue client quotations it was never meant to write.
 | TypeScript | clean |
 | ESLint | 0 errors |
 | Unit tests | 564 passed |
-| Integration tests | see the verification run |
+| Integration tests | 414 passed against Neon (391 before, 23 added) |
 | Production build | passed, 84 routes |
 | Role coverage | all six, split by `can(role, …)` rather than hardcoded |
 
