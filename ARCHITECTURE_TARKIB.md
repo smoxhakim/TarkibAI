@@ -1018,6 +1018,55 @@ blocker, so a withheld finding cannot reappear as a summary count or as the
 reason a document was refused. The pure checks still produce them: the engine
 has no business knowing who is asking.
 
+### Project and design writes
+
+`project.edit` ("Edit the specification, files and conversation") and
+`design.edit` ("Edit the canvas and decide on design proposals") both existed
+and both described these operations. Neither was enforced on the write paths,
+which checked project MEMBERSHIP only:
+
+| Operation | Permission |
+| --- | --- |
+| `getSpec`, `getScene`, `listProposals` | project access — reads, unchanged |
+| `updateDraftSpec` | **`project.edit`** |
+| `approveSpec` | `project.edit` |
+| `seedScene` | **`design.edit`** |
+| `applyCommands` | `design.edit` |
+| `createProposal`, `approveProposal`, `rejectProposal` | **`design.edit`** |
+
+Two of these are worth their reasoning.
+
+**`seedScene` is spec-driven but canvas-shaped.** It upserts `CanvasScene` and
+discards whatever was there, so it takes the permission of the row it writes,
+not of the row it reads from. Otherwise the same resource had two different
+gates depending on which button reached it.
+
+**`approveProposal` had a check by accident, in the wrong place.** It calls
+`applyCommands`, which asserts `design.edit` — but that call sits inside the
+handler that treats a failure as "this proposal cannot be applied" and rejects
+the proposal. So a member without the permission who pressed Approve destroyed
+the pending proposal, stamped the 403 text into `failureReason`, and received a
+misleading `409 proposal_apply_failed`. An unauthorised role could clear the
+design queue one proposal at a time.
+
+The permission is now asserted before the proposal is loaded, and the handler
+matches on error CODE rather than catching everything:
+`bad_request`, `object_not_found` and `duplicate_object` mean the proposal
+cannot be applied; anything else — `forbidden`, `not_found`, an unexpected bug
+— propagates untouched. Codes rather than statuses, because the statuses
+collide exactly where it matters: a deleted canvas object is `object_not_found`
+(404) and is a real reason to reject a proposal, while a project the caller
+cannot see is `not_found` (404) and is not.
+
+`design.edit` is a subset of `project.edit` in the matrix, and a test says so.
+It has to be: approving a proposal can reach `updateDraftSpec` through the
+proposal's spec patch, so a role that could edit the design without editing the
+project would half-apply an approval — canvas written, specification refused.
+
+Both layers keep their check. `applyCommands` and `updateDraftSpec` still
+assert for themselves rather than trusting the caller, so a future caller
+inherits the boundary instead of having to remember it.
+
 ### Reading a quote and writing one are different permissions
 
 TARKIB has exactly two quote permissions and they already drew this line:

@@ -58,9 +58,13 @@ function describeCommand(command: SceneCommand): string {
 export function DesignProposalsPanel({
   projectId,
   proposals,
+  canDecide,
 }: {
   projectId: string;
   proposals: ProposalItem[];
+  /** Whether this reader holds `design.edit`. The service refuses the decision
+   *  either way; this only stops offering a button that would be refused. */
+  canDecide: boolean;
 }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -147,7 +151,7 @@ export function DesignProposalsPanel({
                 <button
                   type="button"
                   onClick={() => decide(proposal.id, 'approve')}
-                  disabled={busyId === proposal.id}
+                  disabled={busyId === proposal.id || !canDecide}
                   className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {busyId === proposal.id && decision === 'approve'
@@ -157,7 +161,7 @@ export function DesignProposalsPanel({
                 <button
                   type="button"
                   onClick={() => decide(proposal.id, 'reject')}
-                  disabled={busyId === proposal.id}
+                  disabled={busyId === proposal.id || !canDecide}
                   className="text-sm text-ink-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-50"
                 >
                   {busyId === proposal.id && decision === 'reject'

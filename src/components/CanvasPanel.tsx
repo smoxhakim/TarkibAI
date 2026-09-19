@@ -64,11 +64,15 @@ const int = (raw: string): number => {
 export function CanvasPanel({
   projectId,
   view,
+  canEdit,
   materials,
   objectTypes,
 }: {
   projectId: string;
   view: CanvasView;
+  /** Whether this reader holds `design.edit`. The canvas stays readable
+   *  without it; only the controls that write are withheld. */
+  canEdit: boolean;
   materials: MaterialOption[];
   /** The trade's palette. The scene can still hold types outside it — an
    *  existing object is never made unopenable by narrowing what is offered. */
@@ -184,7 +188,7 @@ export function CanvasPanel({
           <button
             type="button"
             onClick={() => post(`/api/projects/${projectId}/canvas/seed`)}
-            disabled={pending}
+            disabled={pending || !canEdit}
             className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {pending
@@ -197,6 +201,7 @@ export function CanvasPanel({
         {!adding && !editingId ? (
           <button
             type="button"
+            disabled={!canEdit}
             onClick={() => {
               setAdding(true);
               setDraft(emptyDraft(objectTypes[0]));
@@ -225,7 +230,7 @@ export function CanvasPanel({
                 id="c-type"
                 value={draft.type}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value as ObjectType })}
-                disabled={pending}
+                disabled={pending || !canEdit}
                 className={inputClass}
               >
                 {objectTypes.map((type) => (
@@ -244,7 +249,7 @@ export function CanvasPanel({
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
                 maxLength={160}
-                disabled={pending}
+                disabled={pending || !canEdit}
                 className={inputClass}
               />
             </div>
@@ -268,7 +273,7 @@ export function CanvasPanel({
                   step="1"
                   value={draft[field]}
                   onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
-                  disabled={pending}
+                  disabled={pending || !canEdit}
                   className={inputClass}
                 />
               </div>
@@ -282,7 +287,7 @@ export function CanvasPanel({
                 id="c-material"
                 value={draft.materialId}
                 onChange={(e) => setDraft({ ...draft, materialId: e.target.value })}
-                disabled={pending}
+                disabled={pending || !canEdit}
                 className={inputClass}
               >
                 <option value="">{strings.canvas.noMaterial}</option>
@@ -303,7 +308,7 @@ export function CanvasPanel({
                 value={draft.notes}
                 onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
                 maxLength={500}
-                disabled={pending}
+                disabled={pending || !canEdit}
                 className={inputClass}
               />
             </div>
@@ -313,7 +318,7 @@ export function CanvasPanel({
                 type="checkbox"
                 checked={draft.showDimensions}
                 onChange={(e) => setDraft({ ...draft, showDimensions: e.target.checked })}
-                disabled={pending}
+                disabled={pending || !canEdit}
               />
               {strings.canvas.fields.showDimensions}
             </label>
@@ -323,7 +328,7 @@ export function CanvasPanel({
             <button
               type="button"
               onClick={submitDraft}
-              disabled={pending}
+              disabled={pending || !canEdit}
               className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               {pending ? strings.canvas.saving : strings.canvas.save}
@@ -335,6 +340,8 @@ export function CanvasPanel({
                 setEditingId(null);
                 setError(null);
               }}
+              /* Not gated: cancelling writes nothing, and disabling it would
+                 strand a reader who somehow reached the editor. */
               disabled={pending}
               className="text-sm text-ink-muted underline-offset-2 hover:text-ink hover:underline"
             >
@@ -386,7 +393,7 @@ export function CanvasPanel({
                         commands: [{ kind: 'remove_object', id: object.id }],
                       })
                     }
-                    disabled={pending}
+                    disabled={pending || !canEdit}
                     className="text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
                   >
                     {strings.canvas.remove}

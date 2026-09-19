@@ -857,10 +857,10 @@ expected to make money — with every figure labelled for what it actually is. �
       panels — and `/api/projects/:id/recommendations` — show prices to roles
       without `cost.view`. **Closed by the cost-visibility hardening task**; see
       below.
-- [ ] `createProposal`, `approveProposal` and `updateDraftSpec` check project
+- [x] `createProposal`, `approveProposal` and `updateDraftSpec` check project
       access but not `design.edit` / `project.edit`, so the design-proposal
-      routes accept decisions from roles the matrix excludes. The AI tools that
-      reach them now assert the permission themselves.
+      routes accept decisions from roles the matrix excludes. **Closed by the
+      design/project write-authorization task**; see below.
 
 ### Definition of done
 
@@ -1071,6 +1071,38 @@ and issue client quotations it was never meant to write.
 | Integration tests | 414 passed against Neon (391 before, 23 added) |
 | Production build | passed, 84 routes |
 | Role coverage | all six, split by `can(role, …)` rather than hardcoded |
+
+### Security hardening — design and project write authorization
+
+The last gap from the cost-visibility audit. `project.edit` and `design.edit`
+both existed and both described these operations; the write paths checked
+membership only.
+
+- [x] `updateDraftSpec` requires `project.edit`
+- [x] `createProposal` requires `design.edit`, asserted before the supersede
+      of any pending proposal
+- [x] `rejectProposal` requires `design.edit`
+- [x] `approveProposal` requires `design.edit` before the proposal is loaded
+- [x] `seedScene` requires `design.edit` — it writes the row `applyCommands`
+      writes
+- [x] The proposal-application handler narrowed to `bad_request`,
+      `object_not_found` and `duplicate_object`, so an authorization failure
+      can no longer be recorded as a rejection
+- [x] `design.edit ⊆ project.edit` asserted, because approving can reach the
+      draft spec through a proposal's spec patch
+- [x] Defence in depth kept: `applyCommands` and `updateDraftSpec` still assert
+      for themselves
+- [x] UI: proposal decide buttons and canvas mutation controls gated; cancel
+      deliberately left ungated so nobody is stranded mid-edit
+- [x] AI unchanged — its tools already asserted both permissions
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Focused suite | 42 passed |
+| Directly affected suites | 46 + 62 passed |
+| Role coverage | all six, derived from `can(role, …)` |
 
 ### T21 verification record
 

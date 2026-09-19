@@ -63,7 +63,11 @@ export async function getScene(projectId: string, userId: string): Promise<Scene
  * rather than being given a placeholder rectangle.
  */
 export async function seedScene(projectId: string, userId: string): Promise<SceneView> {
-  await assertProjectAccess(projectId, userId);
+  // The same permission `applyCommands` needs, because this writes the same
+  // row. Seeding is spec-DRIVEN but canvas-SHAPED: it upserts CanvasScene and
+  // discards whatever was there, so gating it on membership alone let anyone
+  // throw away a design they were not allowed to edit.
+  await assertProjectPermission(projectId, userId, 'design.edit');
 
   const spec = await approvedSpec(projectId);
   if (!spec) {
