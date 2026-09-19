@@ -209,15 +209,38 @@ describe('roles are enforced by the services, not by the interface', () => {
     expect((await getProjectCost(project.id, ownerId)).cost).not.toBeNull();
   });
 
-  it('still lets a worker open the project, without the cost section', async () => {
+  it('still lets a worker open the project, without the figures', async () => {
     const { project } = await sharedProject();
 
     // Degrades rather than failing: a worker sees the job they are building.
     const report = await getIntegrityReport(project.id, memberIds.worker);
-    expect(report.findings.every((finding) => finding.area !== 'cost')).toBe(true);
+    expect(report.findings.length).toBeGreaterThanOrEqual(0);
+
+    // This used to assert `finding.area !== 'cost'`, which was the wrong rule
+    // twice over. It let "priced at zero" through, because that finding is
+    // filed under materials; and it hid `cost.stale`, which states no figure
+    // and is what stops a quote going out on superseded numbers. What a worker
+    // must not receive is a FIGURE, not everything filed under cost.
+    const serialised = JSON.stringify(report);
+    expect(serialised).not.toMatch(/priced at zero/i);
+    expect(serialised).not.toMatch(/\b\d+[.,]\d{2}\b/);
 
     const forOwner = await getIntegrityReport(project.id, ownerId);
     expect(forOwner.findings.length).toBeGreaterThanOrEqual(report.findings.length);
+  });
+
+  it('gives a worker and the owner the same document gates', async () => {
+    const { project } = await sharedProject();
+
+    // Visibility may differ; what the project is SAFE to produce may not.
+    const worker = await getIntegrityReport(project.id, memberIds.worker);
+    const owner = await getIntegrityReport(project.id, ownerId);
+
+    expect(worker.readiness.quote.ready).toBe(owner.readiness.quote.ready);
+    expect(worker.readiness.production.ready).toBe(owner.readiness.production.ready);
+    expect(worker.readiness.quote.blockers.map((f) => f.code)).toEqual(
+      owner.readiness.quote.blockers.map((f) => f.code)
+    );
   });
 
   it('refuses quoting to a designer, who cannot see the price behind it', async () => {

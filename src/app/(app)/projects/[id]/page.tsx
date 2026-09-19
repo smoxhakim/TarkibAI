@@ -105,6 +105,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   // A worker sees the project without the cost panel rather than an error.
   const canSeeCost = await hasProjectPermission(project.id, user.id, 'cost.view');
+  // `quote.create` is the single quote WRITE permission — it gates the quote
+  // panel's mutations and, separately, deciding what a client may see.
   const [canShare, canComment, canViewQuotes] = await Promise.all([
     hasProjectPermission(project.id, user.id, 'quote.create'),
     hasProjectPermission(project.id, user.id, 'project.edit'),
@@ -399,6 +401,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         {canViewQuotes ? (
         <QuotesPanel
           projectId={project.id}
+          canWrite={canShare}
           currency={currency}
           costBlockedReason={
             // Null when the reader cannot see costs at all: the quote panel

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { SPEC_VERSION, type ProjectSpecData } from '@/lib/spec/schema';
 import { JOINERY, SIGNAGE } from '@/lib/domains/registry';
 import {
+  FINANCIAL_FINDING_CODES,
+  PRODUCTION_BLOCKING_CODES,
+  QUOTE_BLOCKING_CODES,
   checkCalculations,
+  financialCodesThatGate,
   checkCost,
   checkCutting,
   checkDesign,
@@ -129,6 +133,95 @@ describe('checkMaterials', () => {
     expect(codes(checkMaterials([material({ hasRequirement: false })]))).toContain(
       'material.no_requirement'
     );
+  });
+});
+
+describe('which findings are financial', () => {
+  /** Every finding these pure checks can produce, for a project where each
+   *  problem is present at once. */
+  const everyFinding = [
+    ...checkMaterials([
+      material({ unitPriceCents: 0 }),
+      material({ archived: true }),
+      material({ hasRequirement: false }),
+      material({ standardLengthMm: null }),
+    ]),
+    ...checkCalculations([
+      { name: 'A', calculated: false, staleReasons: [], unsupportedReason: null, warnings: [] },
+      {
+        name: 'B',
+        calculated: true,
+        staleReasons: ['spec_changed'],
+        unsupportedReason: null,
+        warnings: ['A minimum count based on total area.'],
+      },
+    ]),
+    ...checkCost({ exists: false, stale: false, blockedReason: null }),
+    ...checkDesign({ hasScene: true, diverged: true }),
+    ...checkCutting([{ materialName: 'A', unplacedCount: 2 }]),
+  ];
+
+  it('names a code that the engine actually produces', () => {
+    // A set that drifts out of step with the checks protects nothing.
+    const produced = new Set(everyFinding.map((finding) => finding.code));
+    for (const code of FINANCIAL_FINDING_CODES) {
+      expect(produced.has(code), `${code} is listed as financial but nothing emits it`).toBe(true);
+    }
+  });
+
+  it('names every finding in the materials area that talks about price', () => {
+    // The trap this set exists for: a finding can be ABOUT a price and filed
+    // under another area, so area is not a safe proxy for who may read it.
+    const pricey = everyFinding.filter(
+      (finding) =>
+        finding.area !== 'cost' &&
+        /\bprice|\bpriced|\bcost\b|free\b/i.test(`${finding.message} ${finding.action ?? ''}`)
+    );
+    expect(pricey.length).toBeGreaterThan(0);
+    for (const finding of pricey) {
+      expect(
+        FINANCIAL_FINDING_CODES.has(finding.code),
+        `${finding.code} reveals a price but is not marked financial: "${finding.message}"`
+      ).toBe(true);
+    }
+  });
+
+  it('never hides a finding that gates a document', () => {
+    // The quote gate was broken by exactly this overlap: a finding withheld for
+    // visibility stopped existing for the gate that depended on it. If a future
+    // financial check is ever a blocker, this fails before it ships.
+    expect(financialCodesThatGate()).toEqual([]);
+  });
+
+  it('keeps the cost blockers out of the hidden set, because they carry no figure', () => {
+    // "the cost is out of date" and "there is no cost" are statements about
+    // state, not about money, and both gate a quote. They are visible to
+    // anyone who may act on the project.
+    for (const code of ['cost.stale', 'cost.missing']) {
+      expect(FINANCIAL_FINDING_CODES.has(code), code).toBe(false);
+      expect(QUOTE_BLOCKING_CODES.has(code), code).toBe(true);
+    }
+    // The workshop package is gated more narrowly on purpose: it prints what
+    // it does not have rather than refusing, so an absent cost is not its
+    // problem.
+    expect(PRODUCTION_BLOCKING_CODES.has('cost.missing')).toBe(false);
+  });
+
+  it('states no amount in either cost blocker', () => {
+    const findings = [
+      ...checkCost({ exists: false, stale: false, blockedReason: null }),
+      ...checkCost({ exists: true, stale: true, blockedReason: null }),
+    ];
+    expect(findings).toHaveLength(2);
+    for (const finding of findings) {
+      expect(`${finding.message} ${finding.action ?? ''}`).not.toMatch(/\d/);
+    }
+  });
+
+  it('leaves the non-financial material warnings out of the set', () => {
+    for (const code of ['material.archived', 'material.no_requirement', 'material.missing_stock_size']) {
+      expect(FINANCIAL_FINDING_CODES.has(code), code).toBe(false);
+    }
   });
 });
 

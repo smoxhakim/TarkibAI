@@ -3,10 +3,13 @@ import { assertProjectAccess, hasProjectPermission } from '@/lib/projects/servic
 import { getDomain } from '@/lib/domains/registry';
 import { getSpec } from '@/lib/spec/service';
 import { listProjectMaterials } from '@/lib/materials/service';
-import { getProjectCost } from '@/lib/calc/costs/service';
+import { readCostReadiness } from '@/lib/calc/costs/service';
 import { getScene } from '@/lib/canvas/service';
 import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
 import {
+  FINANCIAL_FINDING_CODES,
+  PRODUCTION_BLOCKING_CODES,
+  QUOTE_BLOCKING_CODES,
   checkCalculations,
   checkCost,
   checkCutting,
@@ -38,38 +41,6 @@ export type IntegrityReport = {
   };
 };
 
-/**
- * Findings that make a priced document wrong.
- *
- * A quote's price rests on every material line being current and complete. A
- * line that is stale, missing or uncalculable means the total is missing
- * something, and the client would be quoted a number the system knows is not
- * the project's.
- */
-const QUOTE_BLOCKING_CODES = new Set([
-  'calculation.stale',
-  'calculation.missing',
-  'calculation.unsupported',
-  'material.missing_stock_size',
-  'cost.stale',
-  'cost.missing',
-]);
-
-/**
- * Findings that make a workshop sheet wrong.
- *
- * Deliberately narrower. A package may be built from a drawing alone, and T14
- * prints what it does not contain rather than refusing — absent data is a gap,
- * stated on the document. What is blocked here is data that is present and
- * WRONG: figures superseded by a later change, and pieces the optimiser could
- * not place, which a plan would otherwise imply are being cut.
- */
-const PRODUCTION_BLOCKING_CODES = new Set([
-  'calculation.stale',
-  'calculation.unsupported',
-  'cutting.unplaced',
-]);
-
 /** Gathers every check over the project's real state. */
 export async function getIntegrityReport(
   projectId: string,
@@ -78,14 +49,18 @@ export async function getIntegrityReport(
   const project = await assertProjectAccess(projectId, userId);
   const domain = getDomain(project.domain);
 
-  // A role without cost visibility gets a report without the cost section, not
-  // an error. Everything else it may see is still checked.
+  // Only decides which FINDINGS this reader may see. It must not decide which
+  // checks RUN: a check that is skipped is a blocker that does not exist, and
+  // the gates below are built from these findings.
   const canSeeCost = await hasProjectPermission(projectId, userId, 'cost.view');
 
-  const [spec, materialRows, costView, sceneView, sheetPlans, linearPlans] = await Promise.all([
+  const [spec, materialRows, costReadiness, sceneView, sheetPlans, linearPlans] = await Promise.all([
     getSpec(projectId, userId),
     listProjectMaterials(projectId, userId),
-    canSeeCost ? getProjectCost(projectId, userId) : Promise.resolve(null),
+    // Read for everyone, and deliberately not through `getProjectCost`: this
+    // returns whether the cost exists and whether it is current, with no
+    // amounts, so the checks can run for a caller who may not see the figures.
+    readCostReadiness(projectId),
     getScene(projectId, userId),
     listPlans(projectId, userId),
     listLinearPlans(projectId, userId),
@@ -132,13 +107,11 @@ export async function getIntegrityReport(
         }))
     ),
 
-    ...(costView
-      ? checkCost({
-          exists: costView.cost !== null,
-          stale: costView.stale,
-          blockedReason: costView.blockedReason,
-        })
-      : []),
+    // Always. `cost.stale` and `cost.missing` are the two findings that stop a
+    // quote going out on superseded figures, and neither states an amount —
+    // they say the cost is out of date or absent. Running them only for readers
+    // who may see the figures made the gate depend on the audience.
+    ...checkCost(costReadiness),
 
     ...checkDesign({
       hasScene: sceneView.scene.objects.length > 0,
@@ -158,7 +131,23 @@ export async function getIntegrityReport(
     ),
   ];
 
-  const sorted = sortFindings(findings);
+  // Visibility, applied AFTER every check has run. The order matters: a check
+  // that never runs is a blocker that does not exist, which is how a hidden
+  // cost made a quote issuable. Here the checks have all happened, and only the
+  // presentation narrows.
+  //
+  // Safe to do before the blockers are selected because nothing in the hidden
+  // set gates a document — `financialCodesThatGate()` asserts that, so the rule
+  // is checked rather than remembered.
+  //
+  // Hiding by AREA is what was not enough: a finding can be about a price while
+  // belonging to another area, which is how "priced at zero" reached roles the
+  // cost boundary excludes. Financial findings are named explicitly instead.
+  const visible = canSeeCost
+    ? findings
+    : findings.filter((finding) => !FINANCIAL_FINDING_CODES.has(finding.code));
+
+  const sorted = sortFindings(visible);
   const quoteBlockers = sorted.filter(
     (finding) => finding.severity === 'blocker' && QUOTE_BLOCKING_CODES.has(finding.code)
   );
