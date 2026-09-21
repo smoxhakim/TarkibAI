@@ -34,11 +34,15 @@ export function LinearCutPanel({
   materials,
   cuts,
   plans,
+  canEdit,
 }: {
   projectId: string;
   materials: LinearMaterialOption[];
   cuts: LinearCutView[];
   plans: LinearPlanSummary[];
+  /** Whether this reader holds `project.edit`. The services refuse the write
+   *  either way; this stops offering actions that would be refused. */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [materialId, setMaterialId] = useState(materials[0]?.id ?? '');
@@ -79,9 +83,21 @@ export function LinearCutPanel({
 
   async function removeCut(cutId: string) {
     setPending(cutId);
+    setError(null);
     try {
-      await fetch(`/api/projects/${projectId}/linear-cuts/${cutId}`, { method: 'DELETE' });
+      // Same reason as the piece list: a refused delete was invisible until
+      // the row reappeared on the next refresh.
+      const res = await fetch(`/api/projects/${projectId}/linear-cuts/${cutId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        setError(payload.error ?? strings.linearCutting.removeFailed);
+        return;
+      }
       router.refresh();
+    } catch {
+      setError(strings.linearCutting.removeFailed);
     } finally {
       setPending(null);
     }
@@ -143,7 +159,7 @@ export function LinearCutPanel({
                 <button
                   type="button"
                   onClick={() => removeCut(cut.id)}
-                  disabled={pending === cut.id}
+                  disabled={pending === cut.id || !canEdit}
                   className="text-xs text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
                 >
                   {strings.linearCutting.removeCut}
@@ -196,7 +212,7 @@ export function LinearCutPanel({
           <button
             type="button"
             onClick={addCut}
-            disabled={pending === 'add' || !draft.lengthMm}
+            disabled={pending === 'add' || !draft.lengthMm || !canEdit}
             className="rounded-md border border-line px-3 py-1 text-sm transition-colors hover:border-accent disabled:opacity-50"
           >
             {pending === 'add' ? strings.linearCutting.adding : strings.linearCutting.addCut}
@@ -224,7 +240,9 @@ export function LinearCutPanel({
                 <button
                   type="button"
                   onClick={() => calculate(material.id)}
-                  disabled={pending === `calc-${material.id}` || materialCuts.length === 0}
+                  disabled={
+                    pending === `calc-${material.id}` || materialCuts.length === 0 || !canEdit
+                  }
                   className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {pending === `calc-${material.id}`

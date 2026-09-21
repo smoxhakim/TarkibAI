@@ -304,6 +304,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
         <CuttingPlanPanel
           projectId={project.id}
+          canEdit={canEditProject}
           sheetMaterials={sheetMaterials.map((material) => ({
             id: material.id,
             name: material.name,
@@ -344,6 +345,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
         <LinearCutPanel
           projectId={project.id}
+          canEdit={canEditProject}
           materials={linearMaterials.map((material) => ({
             id: material.id,
             name: material.name,

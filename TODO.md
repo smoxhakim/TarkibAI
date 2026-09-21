@@ -1133,6 +1133,37 @@ Five project-scoped material mutations checked membership only.
 | Affected suites | 89 + 64 passed |
 | Role coverage | all six, derived from `can(role, …)` |
 
+### Security hardening — cutting write authorization
+
+Six cutting mutations checked membership only.
+
+- [x] `addPiece`, `removePiece`, `calculatePlan`, `addLinearCut`,
+      `removeLinearCut` and `calculateLinearCutPlan` require `project.edit`
+- [x] `calculateLinearCutPlan` included with the other five: it upserts the
+      same `CuttingPlan` table on the same key as `calculatePlan`
+- [x] Not `material.manage` (designer and sales lack it), not `design.edit`
+      or `cost.view` (production lacks both), not `production.generate`
+      (designer lacks it)
+- [x] No `cost.view` prerequisite and no redaction: a layout has no money in
+      it, so there is nothing to withhold
+- [x] The two deletes authorise BEFORE loading the row, so a refused caller
+      cannot tell an existing piece id from an absent one
+- [x] `assertMaterialAccess` unchanged on the four operations that take a
+      material; cross-workspace stays 404
+- [x] Reads stay on project access — a worker must still see what is being cut
+- [x] UI: add/remove/calculate gated on `project.edit` in both cutting panels,
+      and both delete handlers now report a refused request instead of
+      silently reverting on the next refresh
+- [x] No AI tool reaches any of the six; none created
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Focused suite | 62 passed |
+| Affected suites | 32 + 52 + 102 passed |
+| Role coverage | all six, derived from `can(role, …)` |
+
 ### T21 verification record
 
 | Check | Result |

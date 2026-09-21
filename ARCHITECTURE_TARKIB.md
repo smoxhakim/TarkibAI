@@ -1060,6 +1060,57 @@ CREATOR predates workspaces (T18) and quietly refused a switch to a material a
 colleague had added to the shared library; both materials now go through
 `assertMaterialAccess`, the workspace-scoped gate the rest of the domain uses.
 
+### Cutting writes: fabrication state is project state
+
+The six operations that write what a project cuts all checked project
+MEMBERSHIP only, and all now take `project.edit`:
+
+| Operation | Permission |
+| --- | --- |
+| `listPieces`, `listLinearCuts`, `listPlans`, `listLinearPlans` | project access — reads, unchanged |
+| `addPiece` | **`project.edit`** |
+| `removePiece` | **`project.edit`** |
+| `calculatePlan` | **`project.edit`** |
+| `addLinearCut` | **`project.edit`** |
+| `removeLinearCut` | **`project.edit`** |
+| `calculateLinearCutPlan` | **`project.edit`** |
+
+`CuttingPiece`, `LinearCut` and `CuttingPlan` are project-scoped fabrication
+state with a foreign key to a material — not entries in the catalogue. So the
+three boundaries stay distinct:
+
+- **`project.edit`** — project-scoped fabrication and cutting writes.
+- **`material.manage`** — the shared `Material` catalogue.
+- **`cost.view`** — financial visibility only; never a write permission.
+
+Each of the other candidates excludes someone who does this work. Designer and
+sales do not hold `material.manage`; production does not hold `design.edit` or
+`cost.view`; designer does not hold `production.generate`. Only `project.edit`
+covers everyone who legitimately cuts and nobody who does not — the worker,
+whose role is "Read the project and its production package. Nothing else."
+
+**It was a safety hole as well as a write.** `cutting.unplaced` is a PRODUCTION
+BLOCKER, so a worker adding an oversized piece and pressing Calculate refused
+the production package for the whole workspace.
+
+**No `cost.view`, because there is no money to withhold.** A layout is sheets
+or bars, areas, offcuts and a waste percentage; none of the three tables has a
+cost column and neither engine result carries one. Requiring cost visibility
+would refuse the operation to production — the role that actually cuts — in
+order to protect a figure these functions never produce. This is the same
+separation as the material calculation, with the redaction half empty.
+
+**`calculateLinearCutPlan` shares the boundary with `calculatePlan`.** They
+upsert the same `CuttingPlan` table on the same `(projectId, materialId)` key.
+Gating one and not the other would mean a caller refused a sheet layout could
+still write a bar layout.
+
+**The two deletes authorise before loading the row.** Otherwise a caller
+without the permission gets 404 for an id that does not exist and 403 for one
+that does, which is a read of the piece list by another name. Cross-workspace
+stays 404 throughout: `assertProjectPermission` calls `assertProjectAccess`
+first, and the material gate is unchanged.
+
 ### Project and design writes
 
 `project.edit` ("Edit the specification, files and conversation") and
