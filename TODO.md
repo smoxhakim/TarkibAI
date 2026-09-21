@@ -1164,6 +1164,54 @@ Six cutting mutations checked membership only.
 | Affected suites | 32 + 52 + 102 passed |
 | Role coverage | all six, derived from `can(role, …)` |
 
+### Security hardening — drawing write authorization
+
+Issuing a technical drawing checked membership only, so a worker could hand the
+workshop a different sheet.
+
+- [x] `issueDrawing` requires `project.edit`
+- [x] Not `design.edit`: the canvas is only READ here, and production — whose
+      role description leads with drawings — does not hold it
+- [x] Not `production.generate` (designer lacks it), not `material.manage`
+      (designer and sales lack it), not `cost.view` (production lacks it, and a
+      drawing has no figure on it to withhold)
+- [x] Reads unchanged: `renderLiveDrawing` and `listIssuedDrawings` stay on
+      project access, because reading the drawing is most of what a worker's
+      role is
+- [x] Authorization precedes every read and every side effect — canvas, version
+      sequence, render, R2 upload and row — so a refused caller cannot tell an
+      empty canvas from a full one, and the 400 domain guards are unreachable
+      without the permission
+- [x] The lifecycle lever closed with the write: a package points at the
+      highest-numbered drawing, so issuing one redirected every package built
+      afterwards and cleared the no-drawing production blocker
+- [x] `materialNames` resolves by workspace instead of `Material.userId`, which
+      predated workspaces — a colleague's material was silently dropped from an
+      immutable sheet, and a member of two businesses annotated one workspace
+      with the other's names
+- [x] Names only: the price columns are not selected, so no money enters the
+      drawing path
+- [x] UI: the Issue button gated on `project.edit`, reusing the value the page
+      already computes; the drawing itself stays visible to every member
+- [x] No AI tool reaches it; none created — the existing "no tool issues a
+      drawing" invariant is now also asserted in the drawing suite
+- [ ] `drawing.issued` audit event — identified in the audit, deliberately not
+      part of this authorization task
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 564 passed |
+| Focused suite | 30 passed |
+| Affected suites | 60 passed (drawings + production) |
+| Integration tests | 587 passed against Neon (557 before, 30 added) |
+| Production build | passed, 84 routes |
+| Migrations | no schema change |
+| Dependencies | none added |
+| Falsification | the two workspace-scoping tests fail against the old `Material.userId` lookup |
+| Role coverage | all six, derived from `can(role, …)` |
+
 ### T21 verification record
 
 | Check | Result |

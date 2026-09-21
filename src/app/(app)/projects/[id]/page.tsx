@@ -292,6 +292,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
         <DrawingsPanel
           projectId={project.id}
+          canIssue={canEditProject}
           svg={liveDrawing.svg}
           views={liveDrawing.views}
           sceneEmpty={liveDrawing.sceneEmpty}

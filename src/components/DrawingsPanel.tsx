@@ -32,12 +32,15 @@ export function DrawingsPanel({
   views,
   sceneEmpty,
   issued,
+  canIssue,
 }: {
   projectId: string;
   svg: string;
   views: LiveDrawingView[];
   sceneEmpty: boolean;
   issued: IssuedDrawing[];
+  /** `project.edit`. Reading a drawing is open to every member; issuing is not. */
+  canIssue: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -127,7 +130,7 @@ export function DrawingsPanel({
             <button
               type="button"
               onClick={issue}
-              disabled={pending}
+              disabled={pending || !canIssue}
               className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               {pending ? strings.drawings.issuing : strings.drawings.issue}
