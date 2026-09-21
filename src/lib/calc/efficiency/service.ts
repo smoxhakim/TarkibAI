@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/db';
-import { assertProjectAccess, hasProjectPermission } from '@/lib/projects/service';
+import { badRequest } from '@/lib/http/api';
+import { assertMaterialAccess } from '@/lib/materials/service';
+import {
+  assertProjectAccess,
+  assertProjectPermission,
+  hasProjectPermission,
+} from '@/lib/projects/service';
 import { readCutDefaults, readMinUsableRemnant } from '@/lib/calc/cutting/schema';
 import {
   recommendBarAlternatives,
@@ -222,19 +228,20 @@ export async function applyMaterialSwitch(
   fromMaterialId: string,
   toMaterialId: string
 ): Promise<void> {
-  await assertProjectAccess(projectId, userId);
+  // Before the transaction below, which reassigns cutting pieces and linear
+  // cuts, clears the calculated figures and DELETES the cutting plan. That is
+  // a project-state rewrite, not a read.
+  await assertProjectPermission(projectId, userId, 'project.edit');
 
-  // Both materials must belong to this user.
+  // Workspace-scoped, through the material domain's own gate. This used to
+  // compare `Material.userId` — the CREATOR — which predates workspaces (T18)
+  // and quietly refused a switch to a material a colleague had added to the
+  // shared library.
   const [from, to] = await Promise.all([
-    prisma.material.findUnique({ where: { id: fromMaterialId } }),
-    prisma.material.findUnique({ where: { id: toMaterialId } }),
+    assertMaterialAccess(fromMaterialId, userId),
+    assertMaterialAccess(toMaterialId, userId),
   ]);
-  if (!from || from.userId !== userId || !to || to.userId !== userId) {
-    const { notFound } = await import('@/lib/http/api');
-    throw notFound('Material');
-  }
   if (from.measurementModel !== to.measurementModel) {
-    const { badRequest } = await import('@/lib/http/api');
     throw badRequest('A material can only be swapped for one measured the same way.');
   }
 

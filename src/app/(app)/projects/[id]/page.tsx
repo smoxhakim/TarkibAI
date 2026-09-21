@@ -116,6 +116,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     // Editing the canvas and deciding design proposals.
     hasProjectPermission(project.id, user.id, 'design.edit'),
   ]);
+  // `project.edit` governs the project's own material state — which materials
+  // it uses, how much of each, and running the calculation. It is the same
+  // permission `canComment` reads; named separately where it is used so
+  // neither reads as the other's gate.
+  const canEditProject = canComment;
   const [shares, comments, purchasePlan] = await Promise.all([
     listShares(project.id, user.id),
     listComments(project.id, user.id),
@@ -260,6 +265,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           projectId={project.id}
           currency={currency}
           showsPrices={canSeeCost}
+          canEdit={canEditProject}
           specApproved={spec.status === 'approved'}
           selected={projectMaterials.map((row) => ({
             ...row,
@@ -372,6 +378,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           currency={currency}
           recommendations={efficiency.recommendations}
           emptyReason={efficiency.emptyReason}
+          canApply={canEditProject}
           // The service's own flag rather than canSeeCost, so the panel cannot
           // disagree with what the server actually sent.
           showsPrices={efficiency.showsPrices}

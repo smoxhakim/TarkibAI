@@ -1104,6 +1104,35 @@ membership only.
 | Directly affected suites | 46 + 62 passed |
 | Role coverage | all six, derived from `can(role, …)` |
 
+### Security hardening — material write authorization
+
+Five project-scoped material mutations checked membership only.
+
+- [x] `selectProjectMaterial`, `updateProjectMaterialRequirement`,
+      `removeProjectMaterial`, `calculateProjectMaterials` and
+      `applyMaterialSwitch` require `project.edit`
+- [x] `material.manage` stays dedicated to the shared catalogue — gating these
+      on it would stop designers and sales specifying materials
+- [x] `calculateProjectMaterials` does NOT require `cost.view`: production
+      calculates what to buy without learning what it costs
+- [x] `CalculationSummary.totalMaterialCostCents` is `number | null` and
+      withheld without `cost.view` — the leak the cost-visibility pass missed,
+      because it gated the `materials` half of the response and not the summary
+- [x] `applyMaterialSwitch` uses `assertMaterialAccess` for both materials
+      instead of comparing `Material.userId`, which predated workspaces
+- [x] Authorization precedes every mutation, including the switch transaction
+- [x] UI: material add/remove/requirement/calculate and the efficiency apply
+      control gated on `project.edit`
+- [x] No AI tool reaches any of the five; none created
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Focused suite | 39 passed |
+| Affected suites | 89 + 64 passed |
+| Role coverage | all six, derived from `can(role, …)` |
+
 ### T21 verification record
 
 | Check | Result |

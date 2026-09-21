@@ -44,6 +44,7 @@ export function ProjectMaterialsPanel({
   currency,
   specApproved,
   showsPrices,
+  canEdit,
 }: {
   projectId: string;
   selected: SelectedMaterial[];
@@ -53,6 +54,9 @@ export function ProjectMaterialsPanel({
   /** Whether this reader holds `cost.view`. The server has already withheld
    *  the figures if not; this decides what the panel says in their place. */
   showsPrices: boolean;
+  /** Whether this reader holds `project.edit`. The services refuse the write
+   *  either way; this stops offering actions that would be refused. */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [materialId, setMaterialId] = useState('');
@@ -184,7 +188,7 @@ export function ProjectMaterialsPanel({
             id="pm-material"
             value={materialId}
             onChange={(e) => setMaterialId(e.target.value)}
-            disabled={pending || available.length === 0}
+            disabled={pending || available.length === 0 || !canEdit}
             className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60"
           >
             <option value="">
@@ -201,14 +205,14 @@ export function ProjectMaterialsPanel({
             onChange={(e) => setRole(e.target.value)}
             placeholder={strings.projectMaterials.rolePlaceholder}
             maxLength={160}
-            disabled={pending}
+            disabled={pending || !canEdit}
             aria-label={strings.projectMaterials.rolePlaceholder}
             className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-60"
           />
           <button
             type="button"
             onClick={add}
-            disabled={pending || !materialId}
+            disabled={pending || !materialId || !canEdit}
             className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {pending ? strings.projectMaterials.adding : strings.projectMaterials.add}
@@ -238,6 +242,7 @@ export function ProjectMaterialsPanel({
                 row={row}
                 currency={currency}
                 busy={savingId === row.id || removingId === row.id}
+                canEdit={canEdit}
                 onSaveRequirement={saveRequirement}
                 onRemove={remove}
               />
@@ -259,7 +264,7 @@ export function ProjectMaterialsPanel({
                 <button
                   type="button"
                   onClick={calculate}
-                  disabled={calculating || !anyRequirement}
+                  disabled={calculating || !anyRequirement || !canEdit}
                   className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {calculating

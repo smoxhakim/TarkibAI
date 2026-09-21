@@ -1018,6 +1018,48 @@ blocker, so a withheld finding cannot reappear as a summary count or as the
 reason a document was refused. The pure checks still produce them: the engine
 has no business knowing who is asking.
 
+### Material writes: the catalogue and the project are different things
+
+Two permissions that read as if they overlap and do not:
+
+- **`material.manage`** governs the shared `Material` catalogue — the stock
+  sizes and prices a business buys. `createMaterial`, `updateMaterial`,
+  `deleteMaterial` and archiving go through `assertMaterialManagement`.
+- **`project.edit`** governs what ONE PROJECT is built from: which materials
+  it uses, how much of each, the calculated purchase counts, and switching it
+  to different stock. None of those writes a `Material` row.
+
+| Operation | Permission |
+| --- | --- |
+| `listProjectMaterials` | project access — read; money follows `cost.view` |
+| `selectProjectMaterial` | `project.edit` |
+| `updateProjectMaterialRequirement` | `project.edit` |
+| `removeProjectMaterial` | `project.edit` |
+| `calculateProjectMaterials` | `project.edit` |
+| `applyMaterialSwitch` | `project.edit` |
+| `createMaterial`, `updateMaterial`, `deleteMaterial` | `material.manage` |
+
+Gating the project-scoped five on `material.manage` would have been the
+plausible wrong answer: the matrix gives it to owner, admin and production, so
+a designer or a salesperson could no longer specify the materials for a job,
+which is most of what they do.
+
+**Calculating is `project.edit`; seeing the total is `cost.view`.** They are
+not combined. `calculateProjectMaterials` writes purchase counts, waste,
+snapshots and the project's stage — work a production manager must be able to
+do — and returns a `totalMaterialCostCents` they must not see. So the
+permission gates the calculation and the figure is withheld from the response:
+the field is `number | null`, null for a caller without `cost.view`, and null
+is distinguishable from a genuine zero. The stored figures are untouched;
+withholding is about what crosses the boundary, not what is computed. The
+per-line money was already withheld by `listProjectMaterials`; this closed the
+summary, which the cost-visibility pass did not cover.
+
+`applyMaterialSwitch` also stopped checking `Material.userId`. Comparing the
+CREATOR predates workspaces (T18) and quietly refused a switch to a material a
+colleague had added to the shared library; both materials now go through
+`assertMaterialAccess`, the workspace-scoped gate the rest of the domain uses.
+
 ### Project and design writes
 
 `project.edit` ("Edit the specification, files and conversation") and
