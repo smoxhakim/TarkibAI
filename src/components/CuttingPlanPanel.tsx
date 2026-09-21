@@ -35,11 +35,15 @@ export function CuttingPlanPanel({
   sheetMaterials,
   pieces,
   plans,
+  canEdit,
 }: {
   projectId: string;
   sheetMaterials: SheetMaterialOption[];
   pieces: CuttingPieceView[];
   plans: CuttingPlanView[];
+  /** Whether this reader holds `project.edit`. The services refuse the write
+   *  either way; this stops offering actions that would be refused. */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [materialId, setMaterialId] = useState(sheetMaterials[0]?.id ?? '');
@@ -83,9 +87,22 @@ export function CuttingPlanPanel({
 
   async function removePiece(pieceId: string) {
     setPending(pieceId);
+    setError(null);
     try {
-      await fetch(`/api/projects/${projectId}/cutting-pieces/${pieceId}`, { method: 'DELETE' });
+      // A refused delete used to be swallowed: the row vanished from the list
+      // and came back on the next refresh with nothing said. Now that the
+      // service can answer 403, the failure has to be shown.
+      const res = await fetch(`/api/projects/${projectId}/cutting-pieces/${pieceId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        setError(payload.error ?? strings.cutting.removeFailed);
+        return;
+      }
       router.refresh();
+    } catch {
+      setError(strings.cutting.removeFailed);
     } finally {
       setPending(null);
     }
@@ -150,7 +167,7 @@ export function CuttingPlanPanel({
                 <button
                   type="button"
                   onClick={() => removePiece(piece.id)}
-                  disabled={pending === piece.id}
+                  disabled={pending === piece.id || !canEdit}
                   className="text-xs text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
                 >
                   {strings.cutting.removePiece}
@@ -220,7 +237,7 @@ export function CuttingPlanPanel({
           <button
             type="button"
             onClick={addPiece}
-            disabled={pending === 'add' || !draft.widthMm || !draft.heightMm}
+            disabled={pending === 'add' || !draft.widthMm || !draft.heightMm || !canEdit}
             className="rounded-md border border-line px-3 py-1 text-sm transition-colors hover:border-accent disabled:opacity-50"
           >
             {pending === 'add' ? strings.cutting.adding : strings.cutting.addPiece}
@@ -249,7 +266,9 @@ export function CuttingPlanPanel({
                 <button
                   type="button"
                   onClick={() => calculate(material.id)}
-                  disabled={pending === `calc-${material.id}` || materialPieces.length === 0}
+                  disabled={
+                    pending === `calc-${material.id}` || materialPieces.length === 0 || !canEdit
+                  }
                   className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {pending === `calc-${material.id}`

@@ -1,7 +1,11 @@
 import { prisma } from '@/lib/db';
 import type { WorkspaceId } from '@/lib/workspaces/access';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess, hasProjectPermission } from '@/lib/projects/service';
+import {
+  assertProjectAccess,
+  assertProjectPermission,
+  hasProjectPermission,
+} from '@/lib/projects/service';
 import type { Material } from '@/generated/prisma/client';
 import type { CreateMaterialInput, MaterialQuery, UpdateMaterialInput } from './schema';
 import { recordAudit } from '@/lib/audit/service';
@@ -411,7 +415,9 @@ export async function updateProjectMaterialRequirement(
   projectMaterialId: string,
   input: { requiredQuantity: number | null; requiredDimensions: string | null; role?: string | null }
 ): Promise<ProjectMaterialView[]> {
-  await assertProjectAccess(projectId, userId);
+  // The requirement is the one number the engine does not derive, so it is the
+  // input every purchase count downstream rests on.
+  await assertProjectPermission(projectId, userId, 'project.edit');
 
   const row = await prisma.projectMaterial.findUnique({ where: { id: projectMaterialId } });
   if (!row || row.projectId !== projectId) throw notFound('Project material');
@@ -439,9 +445,13 @@ export async function selectProjectMaterial(
   materialId: string,
   role: string | null
 ): Promise<ProjectMaterialView[]> {
-  await assertProjectAccess(projectId, userId);
-  // Ensures the material belongs to the same user, so a project cannot
-  // reference someone else's private pricing.
+  // `project.edit`, not `material.manage`: this records what THIS PROJECT is
+  // built from and never touches the shared catalogue. Requiring the library
+  // permission would stop a designer or a salesperson specifying materials,
+  // which is most of their job.
+  await assertProjectPermission(projectId, userId, 'project.edit');
+  // Scoped to the workspace, so a project cannot reference another business's
+  // material or its private pricing.
   const material = await assertMaterialAccess(materialId, userId);
 
   if (material.archivedAt) {
@@ -464,7 +474,7 @@ export async function removeProjectMaterial(
   userId: string,
   projectMaterialId: string
 ): Promise<void> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'project.edit');
 
   const row = await prisma.projectMaterial.findUnique({ where: { id: projectMaterialId } });
   if (!row || row.projectId !== projectId) throw notFound('Project material');

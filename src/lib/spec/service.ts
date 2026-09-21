@@ -58,7 +58,11 @@ export async function updateDraftSpec(
   userId: string,
   patch: ProjectSpecPatch
 ): Promise<SpecView> {
-  const project = await assertProjectAccess(projectId, userId);
+  // Writing the draft is `project.edit`, the same permission approving it
+  // needs. Only membership was checked before, which let a worker rewrite the
+  // record a colleague was about to sign off — and this is the only spec write
+  // path in the product, so it was the only thing standing there.
+  const { project } = await assertProjectPermission(projectId, userId, 'project.edit');
   const required = getDomain(project.domain).requiredSpecFields;
 
   const latest = await latestSpecRow(projectId);

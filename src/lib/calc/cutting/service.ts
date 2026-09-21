@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { assertMaterialAccess } from '@/lib/materials/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { buildObjectKey } from '@/lib/storage/keys';
@@ -30,7 +30,12 @@ export async function addPiece(
   userId: string,
   input: CuttingPieceInputPayload
 ): Promise<CuttingPiece[]> {
-  await assertProjectAccess(projectId, userId);
+  // A piece list is PROJECT-scoped fabrication state, so `project.edit` — the
+  // same permission the project's material lines take. Not `material.manage`:
+  // nothing here writes the shared catalogue, and gating on it would stop a
+  // designer or a salesperson saying how a facade divides into panels, which
+  // the schema is explicit is theirs to decide.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   // Scopes the material to this user, so a project cannot reference someone
   // else's library entry.
   const material = await assertMaterialAccess(input.materialId, userId);
@@ -61,7 +66,10 @@ export async function removePiece(
   userId: string,
   pieceId: string
 ): Promise<void> {
-  await assertProjectAccess(projectId, userId);
+  // BEFORE the row is loaded. Authorising afterwards would answer 404 for an
+  // id that does not exist and 403 for one that does, which tells a caller who
+  // may not touch the piece list what is in it.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   const row = await prisma.cuttingPiece.findUnique({ where: { id: pieceId } });
   if (!row || row.projectId !== projectId) throw notFound('Cutting piece');
   await prisma.cuttingPiece.delete({ where: { id: row.id } });
@@ -110,7 +118,13 @@ export async function calculatePlan(
   userId: string,
   input: { materialId: string; kerfMm?: number; edgeMarginMm?: number }
 ): Promise<PlanView> {
-  await assertProjectAccess(projectId, userId);
+  // Writes the plan row and its stored diagram, so `project.edit`.
+  //
+  // Deliberately NOT `cost.view`. A layout has no money in it — sheets, waste
+  // and areas — and production, the role that actually cuts, does not hold
+  // cost visibility. Requiring it would refuse the operation to the people
+  // whose work it is, to protect a figure this function never produces.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   const material = await assertMaterialAccess(input.materialId, userId);
 
   if (material.measurementModel !== 'sheet') {
@@ -237,7 +251,8 @@ export async function addLinearCut(
   userId: string,
   input: LinearCutInputPayload
 ) {
-  await assertProjectAccess(projectId, userId);
+  // The 1D counterpart of `addPiece`, and the same permission.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   const material = await assertMaterialAccess(input.materialId, userId);
 
   if (material.measurementModel !== 'linear') {
@@ -258,7 +273,8 @@ export async function addLinearCut(
 }
 
 export async function removeLinearCut(projectId: string, userId: string, cutId: string) {
-  await assertProjectAccess(projectId, userId);
+  // Before the row is loaded, for the same reason as `removePiece`.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   const row = await prisma.linearCut.findUnique({ where: { id: cutId } });
   if (!row || row.projectId !== projectId) throw notFound('Cut');
   await prisma.linearCut.delete({ where: { id: row.id } });
@@ -302,7 +318,10 @@ export async function calculateLinearCutPlan(
   userId: string,
   input: { materialId: string; kerfMm?: number; minUsableRemnantMm?: number }
 ): Promise<LinearPlanView> {
-  await assertProjectAccess(projectId, userId);
+  // The same write boundary as `calculatePlan`: it upserts the same
+  // `CuttingPlan` table on the same key. Gating one and not the other would
+  // mean a caller refused a sheet layout could still write a bar layout.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   const material = await assertMaterialAccess(input.materialId, userId);
 
   if (material.measurementModel !== 'linear') {

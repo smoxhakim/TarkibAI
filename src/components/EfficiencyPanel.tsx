@@ -31,6 +31,7 @@ export function EfficiencyPanel({
   emptyReason,
   currency,
   showsPrices,
+  canApply,
 }: {
   projectId: string;
   recommendations: RecommendationView[];
@@ -39,6 +40,9 @@ export function EfficiencyPanel({
   /** Whether this reader holds `cost.view`. The server has already withheld the
    *  figures if not; this decides what is said in their place. */
   showsPrices: boolean;
+  /** Whether this reader holds `project.edit`. Applying a recommendation
+   *  rewrites the project's materials and deletes its cutting plan. */
+  canApply: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
@@ -156,8 +160,9 @@ export function EfficiencyPanel({
                       apply(recommendation.current.materialId, recommendation.alternative.materialId)
                     }
                     disabled={
+                      !canApply ||
                       pending ===
-                      `${recommendation.current.materialId}->${recommendation.alternative.materialId}`
+                        `${recommendation.current.materialId}->${recommendation.alternative.materialId}`
                     }
                     className="mt-3 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
                   >

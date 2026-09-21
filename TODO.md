@@ -857,10 +857,10 @@ expected to make money — with every figure labelled for what it actually is. �
       panels — and `/api/projects/:id/recommendations` — show prices to roles
       without `cost.view`. **Closed by the cost-visibility hardening task**; see
       below.
-- [ ] `createProposal`, `approveProposal` and `updateDraftSpec` check project
+- [x] `createProposal`, `approveProposal` and `updateDraftSpec` check project
       access but not `design.edit` / `project.edit`, so the design-proposal
-      routes accept decisions from roles the matrix excludes. The AI tools that
-      reach them now assert the permission themselves.
+      routes accept decisions from roles the matrix excludes. **Closed by the
+      design/project write-authorization task**; see below.
 
 ### Definition of done
 
@@ -1071,6 +1071,146 @@ and issue client quotations it was never meant to write.
 | Integration tests | 414 passed against Neon (391 before, 23 added) |
 | Production build | passed, 84 routes |
 | Role coverage | all six, split by `can(role, …)` rather than hardcoded |
+
+### Security hardening — design and project write authorization
+
+The last gap from the cost-visibility audit. `project.edit` and `design.edit`
+both existed and both described these operations; the write paths checked
+membership only.
+
+- [x] `updateDraftSpec` requires `project.edit`
+- [x] `createProposal` requires `design.edit`, asserted before the supersede
+      of any pending proposal
+- [x] `rejectProposal` requires `design.edit`
+- [x] `approveProposal` requires `design.edit` before the proposal is loaded
+- [x] `seedScene` requires `design.edit` — it writes the row `applyCommands`
+      writes
+- [x] The proposal-application handler narrowed to `bad_request`,
+      `object_not_found` and `duplicate_object`, so an authorization failure
+      can no longer be recorded as a rejection
+- [x] `design.edit ⊆ project.edit` asserted, because approving can reach the
+      draft spec through a proposal's spec patch
+- [x] Defence in depth kept: `applyCommands` and `updateDraftSpec` still assert
+      for themselves
+- [x] UI: proposal decide buttons and canvas mutation controls gated; cancel
+      deliberately left ungated so nobody is stranded mid-edit
+- [x] AI unchanged — its tools already asserted both permissions
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Focused suite | 42 passed |
+| Directly affected suites | 46 + 62 passed |
+| Role coverage | all six, derived from `can(role, …)` |
+
+### Security hardening — material write authorization
+
+Five project-scoped material mutations checked membership only.
+
+- [x] `selectProjectMaterial`, `updateProjectMaterialRequirement`,
+      `removeProjectMaterial`, `calculateProjectMaterials` and
+      `applyMaterialSwitch` require `project.edit`
+- [x] `material.manage` stays dedicated to the shared catalogue — gating these
+      on it would stop designers and sales specifying materials
+- [x] `calculateProjectMaterials` does NOT require `cost.view`: production
+      calculates what to buy without learning what it costs
+- [x] `CalculationSummary.totalMaterialCostCents` is `number | null` and
+      withheld without `cost.view` — the leak the cost-visibility pass missed,
+      because it gated the `materials` half of the response and not the summary
+- [x] `applyMaterialSwitch` uses `assertMaterialAccess` for both materials
+      instead of comparing `Material.userId`, which predated workspaces
+- [x] Authorization precedes every mutation, including the switch transaction
+- [x] UI: material add/remove/requirement/calculate and the efficiency apply
+      control gated on `project.edit`
+- [x] No AI tool reaches any of the five; none created
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Focused suite | 39 passed |
+| Affected suites | 89 + 64 passed |
+| Role coverage | all six, derived from `can(role, …)` |
+
+### Security hardening — cutting write authorization
+
+Six cutting mutations checked membership only.
+
+- [x] `addPiece`, `removePiece`, `calculatePlan`, `addLinearCut`,
+      `removeLinearCut` and `calculateLinearCutPlan` require `project.edit`
+- [x] `calculateLinearCutPlan` included with the other five: it upserts the
+      same `CuttingPlan` table on the same key as `calculatePlan`
+- [x] Not `material.manage` (designer and sales lack it), not `design.edit`
+      or `cost.view` (production lacks both), not `production.generate`
+      (designer lacks it)
+- [x] No `cost.view` prerequisite and no redaction: a layout has no money in
+      it, so there is nothing to withhold
+- [x] The two deletes authorise BEFORE loading the row, so a refused caller
+      cannot tell an existing piece id from an absent one
+- [x] `assertMaterialAccess` unchanged on the four operations that take a
+      material; cross-workspace stays 404
+- [x] Reads stay on project access — a worker must still see what is being cut
+- [x] UI: add/remove/calculate gated on `project.edit` in both cutting panels,
+      and both delete handlers now report a refused request instead of
+      silently reverting on the next refresh
+- [x] No AI tool reaches any of the six; none created
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Focused suite | 62 passed |
+| Affected suites | 32 + 52 + 102 passed |
+| Role coverage | all six, derived from `can(role, …)` |
+
+### Security hardening — drawing write authorization
+
+Issuing a technical drawing checked membership only, so a worker could hand the
+workshop a different sheet.
+
+- [x] `issueDrawing` requires `project.edit`
+- [x] Not `design.edit`: the canvas is only READ here, and production — whose
+      role description leads with drawings — does not hold it
+- [x] Not `production.generate` (designer lacks it), not `material.manage`
+      (designer and sales lack it), not `cost.view` (production lacks it, and a
+      drawing has no figure on it to withhold)
+- [x] Reads unchanged: `renderLiveDrawing` and `listIssuedDrawings` stay on
+      project access, because reading the drawing is most of what a worker's
+      role is
+- [x] Authorization precedes every read and every side effect — canvas, version
+      sequence, render, R2 upload and row — so a refused caller cannot tell an
+      empty canvas from a full one, and the 400 domain guards are unreachable
+      without the permission
+- [x] The lifecycle lever closed with the write: a package points at the
+      highest-numbered drawing, so issuing one redirected every package built
+      afterwards and cleared the no-drawing production blocker
+- [x] `materialNames` resolves by workspace instead of `Material.userId`, which
+      predated workspaces — a colleague's material was silently dropped from an
+      immutable sheet, and a member of two businesses annotated one workspace
+      with the other's names
+- [x] Names only: the price columns are not selected, so no money enters the
+      drawing path
+- [x] UI: the Issue button gated on `project.edit`, reusing the value the page
+      already computes; the drawing itself stays visible to every member
+- [x] No AI tool reaches it; none created — the existing "no tool issues a
+      drawing" invariant is now also asserted in the drawing suite
+- [ ] `drawing.issued` audit event — identified in the audit, deliberately not
+      part of this authorization task
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 564 passed |
+| Focused suite | 30 passed |
+| Affected suites | 60 passed (drawings + production) |
+| Integration tests | 587 passed against Neon (557 before, 30 added) |
+| Production build | passed, 84 routes |
+| Migrations | no schema change |
+| Dependencies | none added |
+| Falsification | the two workspace-scoping tests fail against the old `Material.userId` lookup |
+| Role coverage | all six, derived from `can(role, …)` |
 
 ### T21 verification record
 

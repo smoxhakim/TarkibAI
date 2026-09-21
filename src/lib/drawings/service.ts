@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { badRequest } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
+import { asWorkspaceId, type WorkspaceId } from '@/lib/workspaces/access';
 import { getScene } from '@/lib/canvas/service';
 import { isStorageConfigured } from '@/lib/storage/config';
 import { buildObjectKey } from '@/lib/storage/keys';
@@ -27,10 +28,22 @@ export type LiveDrawing = {
   sceneEmpty: boolean;
 };
 
-/** Material id → name, so parts can carry a material annotation. */
-async function materialNames(userId: string): Promise<Record<string, string>> {
+/**
+ * Material id → name, so parts can carry a material annotation.
+ *
+ * Scoped by WORKSPACE, not by creator. Before T18 this read `Material.userId`,
+ * which quietly dropped the annotation for every colleague who had not added
+ * the material themselves — and, for someone in two businesses, annotated one
+ * workspace's sheet with the other's names. `userId` records who added a
+ * material and is never consulted for access.
+ *
+ * Names only. Nothing in a drawing is priced, so the price columns are not
+ * selected: data that is never fetched cannot leak through a field somebody
+ * adds later.
+ */
+async function materialNames(workspaceId: WorkspaceId): Promise<Record<string, string>> {
   const materials = await prisma.material.findMany({
-    where: { userId },
+    where: { workspaceId },
     select: { id: true, name: true },
   });
   return Object.fromEntries(materials.map((material) => [material.id, material.name]));
@@ -49,11 +62,14 @@ export async function renderLiveDrawing(
   userId: string,
   kinds: ViewKind[] = [...VIEW_KINDS]
 ): Promise<LiveDrawing> {
-  await assertProjectAccess(projectId, userId);
+  // A read: every role that may open the project may look at its drawing, the
+  // worker included — "read the project and its production package" is the
+  // whole of that role. Unchanged.
+  const project = await assertProjectAccess(projectId, userId);
 
   const [sceneView, materials, title] = await Promise.all([
     getScene(projectId, userId),
-    materialNames(userId),
+    materialNames(asWorkspaceId(project.workspaceId)),
     projectTitle(projectId),
   ]);
 
@@ -84,18 +100,40 @@ export async function listIssuedDrawings(projectId: string, userId: string): Pro
  * issued drawing stays byte-identical even if the renderer changes later. That
  * is the whole point of issuing one: the copy in the workshop and the copy in
  * the record must be the same drawing.
+ *
+ * # Why `project.edit`
+ *
+ * Issuing is a WRITE, and a consequential one. It is not the canvas — the scene
+ * is only read — so it is not `design.edit`, which production does not hold
+ * even though drawings are the first thing their role description names. It is
+ * not `production.generate` either: that builds the package, and the designer
+ * who draws does not hold it. `project.edit` is the one permission every role
+ * that legitimately issues a drawing holds, and the worker does not.
+ *
+ * It was a lifecycle lever as well as a write. A production package always
+ * points at the HIGHEST-numbered drawing, so issuing one silently redirects
+ * every package built afterwards; and a project with no drawing and no
+ * calculated material cannot be packaged at all, so issuing one clears that
+ * blocker for the whole workspace.
+ *
+ * No `cost.view`: a drawing is geometry, part labels and material names. There
+ * is no figure here to withhold, and requiring it would refuse drawings to
+ * production — the role that runs the floor — to protect money this function
+ * never touches.
  */
 export async function issueDrawing(
   projectId: string,
   userId: string,
   input: { kinds?: ViewKind[]; label?: string | null } = {}
 ): Promise<Diagram> {
-  await assertProjectAccess(projectId, userId);
+  // First, and before anything is read: the canvas, the version sequence, the
+  // render, the R2 write and the row all sit behind this line.
+  const { access } = await assertProjectPermission(projectId, userId, 'project.edit');
 
   const kinds = input.kinds && input.kinds.length > 0 ? input.kinds : [...VIEW_KINDS];
   const [sceneView, materials, title] = await Promise.all([
     getScene(projectId, userId),
-    materialNames(userId),
+    materialNames(access.workspaceId),
     projectTitle(projectId),
   ]);
 

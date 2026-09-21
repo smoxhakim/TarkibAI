@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectPermission, hasProjectPermission } from '@/lib/projects/service';
 import { calculateMaterialLine, type MeasurementModel } from './engine';
 
 /**
@@ -21,14 +21,37 @@ export type CalculationSummary = {
   calculatedLines: number;
   skippedLines: number;
   unsupportedLines: number;
-  totalMaterialCostCents: number;
+  /**
+   * The material total, or null when the caller may not see internal cost.
+   *
+   * Nullable rather than always-a-number because `cost.view` decides whether
+   * it is populated, and the type is what forces a consumer to say what it
+   * does when the figure is withheld. Null and zero are distinguishable: a
+   * calculation where every line was skipped genuinely totals 0.
+   */
+  totalMaterialCostCents: number | null;
 };
 
+/**
+ * Runs the material engine over the project and stores the results.
+ *
+ * # Two different permissions, deliberately not combined
+ *
+ * Running this is `project.edit`: it writes purchase counts, waste, snapshots
+ * and the project's stage. SEEING the money it totals is `cost.view`. A
+ * production manager holds the first and not the second, and that has to keep
+ * working — they calculate what to buy without learning what it costs.
+ *
+ * So the calculation is never gated on `cost.view`; only the figure it returns
+ * is. The per-line money is already withheld by `listProjectMaterials`; this
+ * closes the summary, which the earlier cost-visibility pass did not cover.
+ */
 export async function calculateProjectMaterials(
   projectId: string,
   userId: string
 ): Promise<CalculationSummary> {
-  await assertProjectAccess(projectId, userId);
+  await assertProjectPermission(projectId, userId, 'project.edit');
+  const showTotal = await hasProjectPermission(projectId, userId, 'cost.view');
 
   const approvedSpec = await prisma.projectSpec.findFirst({
     where: { projectId, status: 'approved' },
@@ -134,7 +157,12 @@ export async function calculateProjectMaterials(
     });
   }
 
-  return { calculatedLines, skippedLines, unsupportedLines, totalMaterialCostCents };
+  return {
+    calculatedLines,
+    skippedLines,
+    unsupportedLines,
+    totalMaterialCostCents: showTotal ? totalMaterialCostCents : null,
+  };
 }
 
 /** Thrown when a caller asks for results on a project that has none. */

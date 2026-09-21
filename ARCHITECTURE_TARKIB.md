@@ -1018,6 +1018,148 @@ blocker, so a withheld finding cannot reappear as a summary count or as the
 reason a document was refused. The pure checks still produce them: the engine
 has no business knowing who is asking.
 
+### Material writes: the catalogue and the project are different things
+
+Two permissions that read as if they overlap and do not:
+
+- **`material.manage`** governs the shared `Material` catalogue — the stock
+  sizes and prices a business buys. `createMaterial`, `updateMaterial`,
+  `deleteMaterial` and archiving go through `assertMaterialManagement`.
+- **`project.edit`** governs what ONE PROJECT is built from: which materials
+  it uses, how much of each, the calculated purchase counts, and switching it
+  to different stock. None of those writes a `Material` row.
+
+| Operation | Permission |
+| --- | --- |
+| `listProjectMaterials` | project access — read; money follows `cost.view` |
+| `selectProjectMaterial` | `project.edit` |
+| `updateProjectMaterialRequirement` | `project.edit` |
+| `removeProjectMaterial` | `project.edit` |
+| `calculateProjectMaterials` | `project.edit` |
+| `applyMaterialSwitch` | `project.edit` |
+| `createMaterial`, `updateMaterial`, `deleteMaterial` | `material.manage` |
+
+Gating the project-scoped five on `material.manage` would have been the
+plausible wrong answer: the matrix gives it to owner, admin and production, so
+a designer or a salesperson could no longer specify the materials for a job,
+which is most of what they do.
+
+**Calculating is `project.edit`; seeing the total is `cost.view`.** They are
+not combined. `calculateProjectMaterials` writes purchase counts, waste,
+snapshots and the project's stage — work a production manager must be able to
+do — and returns a `totalMaterialCostCents` they must not see. So the
+permission gates the calculation and the figure is withheld from the response:
+the field is `number | null`, null for a caller without `cost.view`, and null
+is distinguishable from a genuine zero. The stored figures are untouched;
+withholding is about what crosses the boundary, not what is computed. The
+per-line money was already withheld by `listProjectMaterials`; this closed the
+summary, which the cost-visibility pass did not cover.
+
+`applyMaterialSwitch` also stopped checking `Material.userId`. Comparing the
+CREATOR predates workspaces (T18) and quietly refused a switch to a material a
+colleague had added to the shared library; both materials now go through
+`assertMaterialAccess`, the workspace-scoped gate the rest of the domain uses.
+
+### Cutting writes: fabrication state is project state
+
+The six operations that write what a project cuts all checked project
+MEMBERSHIP only, and all now take `project.edit`:
+
+| Operation | Permission |
+| --- | --- |
+| `listPieces`, `listLinearCuts`, `listPlans`, `listLinearPlans` | project access — reads, unchanged |
+| `addPiece` | **`project.edit`** |
+| `removePiece` | **`project.edit`** |
+| `calculatePlan` | **`project.edit`** |
+| `addLinearCut` | **`project.edit`** |
+| `removeLinearCut` | **`project.edit`** |
+| `calculateLinearCutPlan` | **`project.edit`** |
+
+`CuttingPiece`, `LinearCut` and `CuttingPlan` are project-scoped fabrication
+state with a foreign key to a material — not entries in the catalogue. So the
+three boundaries stay distinct:
+
+- **`project.edit`** — project-scoped fabrication and cutting writes.
+- **`material.manage`** — the shared `Material` catalogue.
+- **`cost.view`** — financial visibility only; never a write permission.
+
+Each of the other candidates excludes someone who does this work. Designer and
+sales do not hold `material.manage`; production does not hold `design.edit` or
+`cost.view`; designer does not hold `production.generate`. Only `project.edit`
+covers everyone who legitimately cuts and nobody who does not — the worker,
+whose role is "Read the project and its production package. Nothing else."
+
+**It was a safety hole as well as a write.** `cutting.unplaced` is a PRODUCTION
+BLOCKER, so a worker adding an oversized piece and pressing Calculate refused
+the production package for the whole workspace.
+
+**No `cost.view`, because there is no money to withhold.** A layout is sheets
+or bars, areas, offcuts and a waste percentage; none of the three tables has a
+cost column and neither engine result carries one. Requiring cost visibility
+would refuse the operation to production — the role that actually cuts — in
+order to protect a figure these functions never produce. This is the same
+separation as the material calculation, with the redaction half empty.
+
+**`calculateLinearCutPlan` shares the boundary with `calculatePlan`.** They
+upsert the same `CuttingPlan` table on the same `(projectId, materialId)` key.
+Gating one and not the other would mean a caller refused a sheet layout could
+still write a bar layout.
+
+**The two deletes authorise before loading the row.** Otherwise a caller
+without the permission gets 404 for an id that does not exist and 403 for one
+that does, which is a read of the piece list by another name. Cross-workspace
+stays 404 throughout: `assertProjectPermission` calls `assertProjectAccess`
+first, and the material gate is unchanged.
+
+### Project and design writes
+
+`project.edit` ("Edit the specification, files and conversation") and
+`design.edit` ("Edit the canvas and decide on design proposals") both existed
+and both described these operations. Neither was enforced on the write paths,
+which checked project MEMBERSHIP only:
+
+| Operation | Permission |
+| --- | --- |
+| `getSpec`, `getScene`, `listProposals` | project access — reads, unchanged |
+| `updateDraftSpec` | **`project.edit`** |
+| `approveSpec` | `project.edit` |
+| `seedScene` | **`design.edit`** |
+| `applyCommands` | `design.edit` |
+| `createProposal`, `approveProposal`, `rejectProposal` | **`design.edit`** |
+
+Two of these are worth their reasoning.
+
+**`seedScene` is spec-driven but canvas-shaped.** It upserts `CanvasScene` and
+discards whatever was there, so it takes the permission of the row it writes,
+not of the row it reads from. Otherwise the same resource had two different
+gates depending on which button reached it.
+
+**`approveProposal` had a check by accident, in the wrong place.** It calls
+`applyCommands`, which asserts `design.edit` — but that call sits inside the
+handler that treats a failure as "this proposal cannot be applied" and rejects
+the proposal. So a member without the permission who pressed Approve destroyed
+the pending proposal, stamped the 403 text into `failureReason`, and received a
+misleading `409 proposal_apply_failed`. An unauthorised role could clear the
+design queue one proposal at a time.
+
+The permission is now asserted before the proposal is loaded, and the handler
+matches on error CODE rather than catching everything:
+`bad_request`, `object_not_found` and `duplicate_object` mean the proposal
+cannot be applied; anything else — `forbidden`, `not_found`, an unexpected bug
+— propagates untouched. Codes rather than statuses, because the statuses
+collide exactly where it matters: a deleted canvas object is `object_not_found`
+(404) and is a real reason to reject a proposal, while a project the caller
+cannot see is `not_found` (404) and is not.
+
+`design.edit` is a subset of `project.edit` in the matrix, and a test says so.
+It has to be: approving a proposal can reach `updateDraftSpec` through the
+proposal's spec patch, so a role that could edit the design without editing the
+project would half-apply an approval — canvas written, specification refused.
+
+Both layers keep their check. `applyCommands` and `updateDraftSpec` still
+assert for themselves rather than trusting the caller, so a future caller
+inherits the boundary instead of having to remember it.
+
 ### Reading a quote and writing one are different permissions
 
 TARKIB has exactly two quote permissions and they already drew this line:
@@ -1058,6 +1200,70 @@ The two permissions protect different things and the distinction is deliberate:
 Guarding quotes with `cost.view` would take them away from a role the matrix
 deliberately grants them to; guarding them with project access alone gave them
 to designers and workers, who hold neither permission.
+
+### Issuing a drawing is a project write, not a design edit
+
+Rendering a drawing and ISSUING one are different acts. The workspace renders
+live from current data and every member may look at the result; issuing writes a
+numbered `Diagram` and a rasterised copy to R2, and that record is what a
+workshop is handed. Only the second is a write, and it checked project
+MEMBERSHIP alone:
+
+| Operation | Permission |
+| --- | --- |
+| `renderLiveDrawing`, `listIssuedDrawings` | project access — reads, unchanged |
+| `issueDrawing` | **`project.edit`** |
+
+The reads stay open deliberately. A worker's role is "Read the project and its
+production package", and the drawing is the larger half of that package;
+gating the read would take away the one thing the role exists to do.
+
+**Why `project.edit` and not the two permissions whose names fit better.**
+`ROLE_DESCRIPTIONS` promises drawings to two roles: the designer
+("Specifications, design and drawings") and production ("Drawings, cutting
+plans, the material library and production packages"). Their only shared write
+permission is `project.edit`, so it is the only choice that keeps both promises:
+
+- not `design.edit`, which governs the canvas. The canvas is only READ here —
+  nothing about the scene changes — and production, the role whose description
+  leads with drawings, does not hold it. A production manager would have been
+  unable to issue the drawing their own package is built from;
+- not `production.generate`, which governs building the package rather than the
+  artefact the package points at, and which the designer does not hold;
+- not `material.manage`, which governs the shared catalogue that this only reads
+  names out of, and which designer and sales do not hold;
+- not `cost.view`, which is a visibility permission. A drawing is geometry, part
+  labels and material names; there is no figure on it to withhold, and requiring
+  it would refuse drawings to production in order to protect money this path
+  never touches. The same separation as the material calculation, with the
+  redaction half empty.
+
+Sales gain a capability their description does not name, exactly as they did for
+cutting. That is the accepted edge of `project.edit`: it is the project-scoped
+write permission, and sales hold every other one.
+
+**It was a lifecycle lever as well as a write.** A production package always
+points at the HIGHEST-numbered drawing (`latestDrawing`), so issuing one
+silently redirects every package built afterwards — a worker could substitute
+the sheet the floor builds from. And a project with neither a drawing nor a
+calculated material cannot be packaged at all, so issuing one clears that
+blocker for the whole workspace. This is the `cutting.unplaced` problem from the
+other side: that write CREATED a production blocker, this one REMOVES one.
+
+**Authorization runs before anything is read.** The canvas, the version
+sequence, the render, the R2 upload and the row all sit behind the assertion, so
+a refused caller cannot tell an empty canvas from a full one and no partial
+artefact is left behind. Cross-workspace stays 404 throughout, because
+`assertProjectPermission` calls `assertProjectAccess` first.
+
+**Material names are resolved by workspace, not by creator.** `materialNames`
+still read `Material.userId`, which predates workspaces (T18) and had two
+consequences on a record that can never be corrected afterwards: a drawing
+issued by anyone who had not personally added the material lost its annotations
+entirely, and a member of two businesses annotated one workspace's sheet with
+the other's names. It now takes the workspace id the authorization gate already
+resolved. Names only — the price columns are not selected, so there is nothing
+financial in the query to leak through a field somebody adds later.
 
 ---
 

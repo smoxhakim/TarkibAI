@@ -10,12 +10,15 @@ export function ProjectMaterialRow({
   row,
   currency,
   busy,
+  canEdit,
   onSaveRequirement,
   onRemove,
 }: {
   row: SelectedMaterial;
   currency: string;
   busy: boolean;
+  /** Whether this reader holds `project.edit`. */
+  canEdit: boolean;
   onSaveRequirement: (
     id: string,
     requiredQuantity: number | null,
@@ -57,7 +60,7 @@ export function ProjectMaterialRow({
         <button
           type="button"
           onClick={() => onRemove(row.id)}
-          disabled={busy}
+          disabled={busy || !canEdit}
           className="text-xs text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
         >
           {strings.projectMaterials.remove}
@@ -81,7 +84,7 @@ export function ProjectMaterialRow({
                     min={0}
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
-                    disabled={busy}
+                    disabled={busy || !canEdit}
                     autoFocus
                     className="w-32 rounded-md border border-line bg-surface px-2 py-1 text-sm outline-none focus:border-accent disabled:opacity-60"
                   />
@@ -95,14 +98,14 @@ export function ProjectMaterialRow({
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={strings.projectMaterials.requiredNote}
                 maxLength={300}
-                disabled={busy}
+                disabled={busy || !canEdit}
                 aria-label={strings.projectMaterials.requiredNote}
                 className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-sm outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={save}
-                disabled={busy}
+                disabled={busy || !canEdit}
                 className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 {busy ? strings.projectMaterials.savingRequirement : strings.projectMaterials.saveRequirement}
@@ -110,7 +113,7 @@ export function ProjectMaterialRow({
               <button
                 type="button"
                 onClick={() => setEditing(false)}
-                disabled={busy}
+                disabled={busy || !canEdit}
                 className="text-sm text-ink-muted underline-offset-2 hover:text-ink hover:underline"
               >
                 {strings.materials.cancel}
