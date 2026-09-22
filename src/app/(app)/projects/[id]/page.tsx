@@ -222,6 +222,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
         <FilesPanel
           projectId={project.id}
+          canEdit={canEditProject}
           files={files.map((f) => ({ ...f, createdAt: f.createdAt.toISOString() }))}
           storageConfigured={storageConfigured}
         />
@@ -275,6 +276,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
         <MockupsPanel
           projectId={project.id}
+          canEditDesign={canEditDesign}
           configured={isMockupConfigured()}
           sitePhotos={files
             .filter((file) => file.mimeType.startsWith('image/'))
@@ -489,6 +491,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
         <VersionsPanel
           projectId={project.id}
+          canEdit={canEditProject}
           versions={versions.map((version) => ({
             id: version.id,
             versionNumber: version.versionNumber,

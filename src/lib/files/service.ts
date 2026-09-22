@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { ApiError, badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { buildObjectKey } from '@/lib/storage/keys';
 import {
   createSignedDownloadUrl,
@@ -62,7 +62,10 @@ export async function createUploadIntent(
   userId: string,
   input: CreateUploadInput
 ): Promise<{ fileId: string; uploadUrl: string }> {
-  await assertProjectAccess(projectId, userId);
+  // Before the key is reserved, before the row exists and before a signed PUT
+  // is handed out. `project.edit` is defined as "the specification, FILES and
+  // conversation", so this is the permission the operation was always named by.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   if (!isStorageConfigured()) throw storageUnavailable();
 
   const fileId = crypto.randomUUID();
@@ -107,7 +110,14 @@ export async function confirmUpload(
   userId: string,
   fileId: string
 ): Promise<FileView> {
-  await assertProjectAccess(projectId, userId);
+  // Confirming is a write, and two of its paths DELETE — an oversized object
+  // and one whose bytes contradict its type. So it takes the write permission
+  // rather than the membership the row was created under.
+  //
+  // Deliberately not `File.userId === caller`. A colleague's upload must be
+  // confirmable by any project editor; comparing the creator would be the
+  // pre-workspace rule this codebase has been removing since T18.
+  await assertProjectPermission(projectId, userId, 'project.edit');
   if (!isStorageConfigured()) throw storageUnavailable();
 
   const row = await prisma.file.findUnique({ where: { id: fileId } });
@@ -204,7 +214,10 @@ export async function getFileDownloadUrl(
  * object nothing references — invisible, and billed for indefinitely.
  */
 export async function deleteFile(projectId: string, userId: string, fileId: string): Promise<void> {
-  await assertProjectAccess(projectId, userId);
+  // Before the row is loaded, so a caller without the permission gets 403 for
+  // a file that exists and 403 for one that does not — otherwise the pair of
+  // answers is a read of the file list by another name.
+  await assertProjectPermission(projectId, userId, 'project.edit');
 
   const row = await prisma.file.findUnique({ where: { id: fileId } });
   if (!row || row.projectId !== projectId) throw notFound('File');

@@ -26,10 +26,13 @@ export function FilesPanel({
   projectId,
   files,
   storageConfigured,
+  canEdit,
 }: {
   projectId: string;
   files: ProjectFile[];
   storageConfigured: boolean;
+  /** `project.edit`. Every member may read and download; adding and removing is gated. */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -125,14 +128,14 @@ export function FilesPanel({
               multiple
               accept={ACCEPTED_MIME_TYPES.join(',')}
               onChange={onPick}
-              disabled={uploading}
+              disabled={uploading || !canEdit}
               className="sr-only"
               id="file-input"
             />
             <label
               htmlFor="file-input"
               className={`cursor-pointer rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 ${
-                uploading ? 'pointer-events-none opacity-60' : ''
+                uploading || !canEdit ? 'pointer-events-none opacity-60' : ''
               }`}
             >
               {uploading ? strings.files.uploading : strings.files.add}
@@ -185,7 +188,7 @@ export function FilesPanel({
                 <button
                   type="button"
                   onClick={() => remove(file.id)}
-                  disabled={removingId === file.id}
+                  disabled={removingId === file.id || !canEdit}
                   className="mt-1 text-xs text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
                 >
                   {removingId === file.id ? strings.files.removing : strings.files.remove}
