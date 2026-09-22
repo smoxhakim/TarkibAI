@@ -29,11 +29,14 @@ export function MockupsPanel({
   mockups,
   sitePhotos,
   configured,
+  canEditDesign,
 }: {
   projectId: string;
   mockups: MockupView[];
   sitePhotos: SitePhotoOption[];
   configured: boolean;
+  /** `design.edit`. Every member may look at a mockup; generating one spends money. */
+  canEditDesign: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
@@ -96,7 +99,7 @@ export function MockupsPanel({
           <button
             type="button"
             onClick={() => generate('concept')}
-            disabled={pending !== null}
+            disabled={pending !== null || !canEditDesign}
             className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {pending === 'concept' ? strings.mockups.generating : strings.mockups.generateConcept}
@@ -119,7 +122,7 @@ export function MockupsPanel({
               <button
                 type="button"
                 onClick={() => generate('site')}
-                disabled={pending !== null || !photoId}
+                disabled={pending !== null || !photoId || !canEditDesign}
                 className="rounded-md border border-line px-3 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50"
               >
                 {pending === 'site' ? strings.mockups.generating : strings.mockups.generateSite}
@@ -201,7 +204,7 @@ export function MockupsPanel({
                   <button
                     type="button"
                     onClick={() => remove(mockup.id)}
-                    disabled={pending === mockup.id}
+                    disabled={pending === mockup.id || !canEditDesign}
                     className="text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
                   >
                     {strings.mockups.remove}

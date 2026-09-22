@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { badRequest, notFound } from '@/lib/http/api';
-import { assertProjectAccess } from '@/lib/projects/service';
+import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
 import { parseScene } from '@/lib/canvas/schema';
 import type { Prisma, ProjectVersion } from '@/generated/prisma/client';
 import {
@@ -390,9 +390,28 @@ export async function previewRestore(versionId: string, userId: string): Promise
  * the specification being moved away from; writing them back would present
  * figures that no longer follow from the project. They go stale instead, which
  * the material and cost panels already detect and report.
+ *
+ * # Why `project.edit`
+ *
+ * Reading the timeline is open to every member — a worker must be able to see
+ * what the job used to be. Restoring is a WRITE, and a broad one: it writes a
+ * new draft `ProjectSpec`, discards the current `CanvasScene`, and puts the
+ * project back to `intake`.
+ *
+ * It crosses two domains, because the canvas it overwrites is `design.edit`
+ * territory while the specification it writes is `project.edit`. One capability
+ * can govern it safely because `design.edit ⊆ project.edit` is asserted in the
+ * matrix, and the specification is the artefact being restored — the canvas
+ * follows it, exactly as the transaction below says.
  */
 export async function restoreVersion(versionId: string, userId: string): Promise<ProjectVersion> {
   const version = await loadVersion(versionId, userId);
+  // Before the snapshot is read and before the empty-snapshot guard, so a
+  // member without the permission cannot tell a restorable version from one
+  // with nothing in it. `loadVersion` has already made another workspace's
+  // version a 404; this is the 403 for a colleague who may look and not act.
+  await assertProjectPermission(version.projectId, userId, 'project.edit');
+
   const snapshot = toSnapshot(version);
 
   if (Object.keys(snapshot.spec).length === 0) {

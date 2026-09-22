@@ -140,9 +140,12 @@ function DiffView({ diff }: { diff: VersionDiff }) {
 export function VersionsPanel({
   projectId,
   versions,
+  canEdit,
 }: {
   projectId: string;
   versions: VersionRow[];
+  /** `project.edit`. The timeline is readable by every member; writing to it is not. */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [label, setLabel] = useState('');
@@ -252,7 +255,7 @@ export function VersionsPanel({
         />
         <button
           type="button"
-          disabled={busy !== null || label.trim() === ''}
+          disabled={busy !== null || label.trim() === '' || !canEdit}
           onClick={save}
           className="rounded-md border border-line px-3 py-1.5 text-sm transition-colors hover:bg-surface-muted disabled:opacity-50"
         >
@@ -296,7 +299,7 @@ export function VersionsPanel({
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"
-              disabled={busy !== null || restore.blockers.length > 0}
+              disabled={busy !== null || restore.blockers.length > 0 || !canEdit}
               onClick={confirmRestore}
               className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
             >
@@ -371,7 +374,7 @@ export function VersionsPanel({
                 </label>
                 <button
                   type="button"
-                  disabled={busy !== null}
+                  disabled={busy !== null || !canEdit}
                   onClick={() => openRestore(version.id)}
                   className="text-ink-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-50"
                 >

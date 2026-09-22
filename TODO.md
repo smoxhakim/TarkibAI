@@ -1212,6 +1212,54 @@ workshop a different sheet.
 | Falsification | the two workspace-scoping tests fail against the old `Material.userId` lookup |
 | Role coverage | all six, derived from `can(role, …)` |
 
+### Security hardening — version restore, file and mockup write authorization
+
+The last three membership-only write domains. A worker could revert the project,
+delete every file on it, and spend the business's money on image generation.
+
+- [x] `restoreVersion` requires `project.edit`, asserted before the snapshot is
+      read — it writes a draft spec, upserts the canvas and resets the project
+      to `intake`
+- [x] One capability covers both domains it touches because
+      `design.edit ⊆ project.edit`; the specification is the artefact restored
+      and the canvas follows it
+- [x] `POST /api/projects/:id/versions` requires `project.edit` — the one
+      untrusted entry into `recordVersion`, which stays an internal primitive
+- [x] `createUploadIntent`, `confirmUpload` and `deleteFile` require
+      `project.edit` — the permission already read "the specification, FILES
+      and conversation"
+- [x] Creator ownership NOT reintroduced: a project editor may confirm and
+      delete a colleague's upload, and a test says so
+- [x] `requestMockup` and `deleteMockup` require `design.edit` — narrower than
+      the `project.edit` a drawing takes, because a mockup is a presentation
+      aid and is the one write that spends money
+- [x] A refused mockup request creates no row, sends no Inngest event and never
+      reaches the image model — asserted, not assumed
+- [x] Both deletes authorise BEFORE loading the row, so a refused caller cannot
+      tell an existing id from an absent one
+- [x] Reads unchanged in all three: versions, files and mockups stay readable
+      by every member, the worker included
+- [x] `runMockup` unchanged — a background job runs with the authority
+      established at request time
+- [x] UI: files, mockups and versions gated on the values the page already
+      computes; no new permission query
+- [x] No AI tool reaches any of the seven; none created
+- [ ] Audit events for file, mockup and drawing operations — still deferred,
+      not part of this authorization task
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 564 passed |
+| Focused suites | 27 + 34 + 44 = 105 passed |
+| Affected suites | 37 passed (versions + files + mockups, unmodified) |
+| Integration tests | 692 passed against Neon (587 before, 105 added) |
+| Production build | passed, 84 routes |
+| Migrations | no schema change |
+| Dependencies | none added |
+| Role coverage | all six, derived from `can(role, …)` |
+
 ### T21 verification record
 
 | Check | Result |
