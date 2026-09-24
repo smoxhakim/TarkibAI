@@ -56,7 +56,7 @@ beforeAll(async () => {
   otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
   // 30% labour, 500 fixed transport, 10% install, 25% margin, 20% TVA.
-  await updateCostSettings(ownerWs, {
+  await updateCostSettings(ownerWs, ownerId, {
     laborType: 'percent',
     laborBp: 3000,
     laborCents: 0,
@@ -179,7 +179,7 @@ describe('cost calculation', () => {
     const { project } = await costedProject();
     const cost = await computeProjectCost(project.id, ownerId);
 
-    await updateCostSettings(ownerWs, {
+    await updateCostSettings(ownerWs, ownerId, {
       laborType: 'percent',
       laborBp: 9000,
       laborCents: 0,
@@ -200,7 +200,7 @@ describe('cost calculation', () => {
     expect(stored.laborCostCents).toBe(30000);
 
     // restore for other tests
-    await updateCostSettings(ownerWs, {
+    await updateCostSettings(ownerWs, ownerId, {
       laborType: 'percent',
       laborBp: 3000,
       laborCents: 0,
@@ -278,7 +278,7 @@ describe('client-safe boundary', () => {
     // mathematically identical — tax = (internal x 1.25) x 0.20 = internal x 0.25
     // — which would make a value-based leak assertion unsatisfiable on a
     // correct result.
-    await updateCostSettings(ownerWs, {
+    await updateCostSettings(ownerWs, ownerId, {
       laborType: 'percent',
       laborBp: 3000,
       laborCents: 0,
@@ -307,7 +307,7 @@ describe('client-safe boundary', () => {
     expect(json).not.toContain(String(cost.marginCents));
     expect(json).not.toContain(String(cost.materialsCostCents));
 
-    await updateCostSettings(ownerWs, {
+    await updateCostSettings(ownerWs, ownerId, {
       laborType: 'percent',
       laborBp: 3000,
       laborCents: 0,

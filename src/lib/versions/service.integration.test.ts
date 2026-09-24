@@ -61,13 +61,13 @@ beforeAll(async () => {
   ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
   otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
-  await updateCostSettings(ownerWs, {
+  await updateCostSettings(ownerWs, ownerId, {
     laborType: 'percent', laborBp: 3000, laborCents: 0,
     transportType: 'fixed', transportBp: 0, transportCents: 50_000,
     installType: 'percent', installBp: 1000, installCents: 0,
     marginBp: 4000, taxBp: 2000, currency: 'MAD',
   });
-  await updateQuoteSettings(ownerWs, {
+  await updateQuoteSettings(ownerWs, ownerId, {
     companyName: 'Atelier Nour', companyAddress: null, companyPhone: null,
     companyEmail: null, taxIdentifiers: null, primaryColorHex: null,
     footerText: null, termsText: null, paymentDetails: null,

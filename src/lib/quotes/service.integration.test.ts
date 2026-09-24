@@ -80,9 +80,9 @@ beforeAll(async () => {
   ownerWs = asWorkspaceId((await ensurePersonalWorkspace(ownerId)).id);
   otherWs = asWorkspaceId((await ensurePersonalWorkspace(otherId)).id);
 
-  await updateCostSettings(ownerWs, COST_SETTINGS);
-  await updateCostSettings(otherWs, COST_SETTINGS);
-  await updateQuoteSettings(ownerWs, {
+  await updateCostSettings(ownerWs, ownerId, COST_SETTINGS);
+  await updateCostSettings(otherWs, otherId, COST_SETTINGS);
+  await updateQuoteSettings(ownerWs, ownerId, {
     companyName: 'Atelier Nour',
     companyAddress: '12 Rue des Artisans, Casablanca',
     companyPhone: '+212 522 00 00 00',
@@ -182,9 +182,9 @@ describe('seeding from the calculation', () => {
     const { project } = await costedProject();
     // Changed after the cost was computed. The quote must price on the rate the
     // calculation used, or the totals would not reconcile with it.
-    await updateCostSettings(ownerWs, { ...COST_SETTINGS, taxBp: 700 });
+    await updateCostSettings(ownerWs, ownerId, { ...COST_SETTINGS, taxBp: 700 });
     const quote = await createQuote(project.id, ownerId, client);
-    await updateCostSettings(ownerWs, COST_SETTINGS);
+    await updateCostSettings(ownerWs, ownerId, COST_SETTINGS);
 
     expect(quote.taxBp).toBe(2000);
   });
@@ -213,7 +213,7 @@ describe('numbering', () => {
     // Per business, not per person: two members of one workspace must never
     // both produce Q-2026-0001, and two workspaces must not see each other's
     // numbering.
-    await updateCostSettings(otherWs, COST_SETTINGS);
+    await updateCostSettings(otherWs, otherId, COST_SETTINGS);
     const project = (await costedProject(otherId, otherWs)).project;
     const theirs = await createQuote(project.id, otherId, client);
 
@@ -315,7 +315,7 @@ describe('issuing', () => {
       data: { clerkId: `qn-${suffix}`, email: `qn-${suffix}@example.test` },
     });
     const namelessWs = asWorkspaceId((await ensurePersonalWorkspace(nameless.id)).id);
-    await updateCostSettings(namelessWs, COST_SETTINGS);
+    await updateCostSettings(namelessWs, nameless.id, COST_SETTINGS);
     const { project } = await costedProject(nameless.id, namelessWs);
     const quote = await createQuote(project.id, nameless.id, client);
 
@@ -350,9 +350,9 @@ describe('issuing', () => {
 
     // The company is renamed afterwards. The issued quote must not follow.
     const before = await getQuoteSettings(ownerWs);
-    await updateQuoteSettings(ownerWs, { ...toPayload(before), companyName: 'Renamed Atelier' });
+    await updateQuoteSettings(ownerWs, ownerId, { ...toPayload(before), companyName: 'Renamed Atelier' });
     const document = await buildQuoteDocument(quote.id, ownerId);
-    await updateQuoteSettings(ownerWs, toPayload(before));
+    await updateQuoteSettings(ownerWs, ownerId, toPayload(before));
 
     expect(document.issuer.companyName).toBe('Atelier Nour');
   });

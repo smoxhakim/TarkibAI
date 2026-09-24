@@ -76,8 +76,8 @@ beforeAll(async () => {
     data: { workspaceId: ws, userId: workerId, role: 'production' },
   });
 
-  await updateCostSettings(ws, COST_SETTINGS);
-  await updateQuoteSettings(ws, {
+  await updateCostSettings(ws, ownerId, COST_SETTINGS);
+  await updateQuoteSettings(ws, ownerId, {
     companyName: 'Atelier Nour', companyAddress: null, companyPhone: null,
     companyEmail: null, taxIdentifiers: null, primaryColorHex: null,
     footerText: null, termsText: null, paymentDetails: null,

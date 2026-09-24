@@ -95,11 +95,25 @@ export async function listProjects(
   });
 }
 
+/**
+ * Creates a project in a workspace.
+ *
+ * The permission is asserted HERE and not only in the route. Every other write
+ * in this codebase is refusable at the service, and a creation that is only
+ * guarded by its caller is a creation the next caller can forget to guard —
+ * which is the shape of every finding Tasks 5–9 closed.
+ *
+ * It takes a workspace rather than a project gate because there is no project
+ * yet: `assertProjectPermission` needs a row to resolve, and this is the call
+ * that makes one.
+ */
 export async function createProject(
   workspaceId: WorkspaceId,
   userId: string,
   input: CreateProjectInput
 ): Promise<Project> {
+  await assertWorkspacePermission(workspaceId, userId, 'project.create');
+
   return prisma.project.create({
     // The column defaults to signage, so an omitted domain keeps the behaviour
     // every project had before T17.
