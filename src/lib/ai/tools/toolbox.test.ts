@@ -188,14 +188,50 @@ describe('the quote boundary', () => {
     expect(namesFor('worker')).not.toContain('get_quote');
   });
 
-  it('exposes no tool that writes a quotation, for any role', () => {
+  /**
+   * Narrowed in T22.3, which exists to add exactly one quote write: creating a
+   * DRAFT. Everything that changes a quotation after that — editing, issuing,
+   * sending, deleting, approving, and the workspace's quote settings and logo —
+   * stays a human action in the interface, for every role.
+   */
+  it('exposes no tool that edits, issues, sends or deletes a quotation, for any role', () => {
     for (const role of WORKSPACE_ROLES) {
       for (const name of namesFor(role)) {
         expect(name, `${role} must not have ${name}`).not.toMatch(
-          /create_quote|update_quote|delete_quote|issue_quote|approve_quote|quote_settings|quote_logo|send_quote/i
+          /update_quote|edit_quote|delete_quote|issue_quote|approve_quote|send_quote|quote_settings|quote_logo/i
         );
       }
     }
+  });
+
+  it('gives create_quote only to roles with quote.create (T22.3)', () => {
+    for (const role of WORKSPACE_ROLES) {
+      expect(namesFor(role).includes('create_quote'), role).toBe(can(role, 'quote.create'));
+    }
+  });
+
+  it('withholds create_quote from production, who may read a quote and not write one', () => {
+    expect(namesFor('production')).toContain('get_quote');
+    expect(namesFor('production')).not.toContain('create_quote');
+  });
+
+  it('lets create_quote carry no price, status, number or project', () => {
+    const tool = buildToolbox(accessAs('sales')).find((entry) => entry.name === 'create_quote');
+    expect(tool).toBeDefined();
+    const properties = Object.keys(
+      (tool!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
+    );
+    // What the model may say is who and how it is headed — nothing financial or
+    // structural. The application decides the rest.
+    for (const forbidden of [
+      'projectId', 'userId', 'workspaceId', 'role', 'status', 'number', 'sequence',
+      'subtotalCents', 'totalCents', 'taxCents', 'taxBp', 'unitPriceCents', 'lines', 'currency',
+    ]) {
+      expect(properties, forbidden).not.toContain(forbidden);
+    }
+    expect(properties).toContain('clientName');
+    expect(properties).toContain('confirmed');
+    expect((tool!.parameters as { additionalProperties?: boolean }).additionalProperties).toBe(false);
   });
 
   it('takes no arguments at all, so it cannot address another project', () => {

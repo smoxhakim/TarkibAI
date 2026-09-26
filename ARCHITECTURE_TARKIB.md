@@ -427,6 +427,7 @@ read at all.
 | `get_cutting_plans` | none | project.view |
 | `get_project_cost` | none | **cost.view** |
 | `get_quote` | none | **quote.view**; the internal comparison only with cost.view |
+| `create_quote` | creates a DRAFT quote, only after a confirmed preview | **quote.create** (the service also reads cost, so cost.view) |
 | `get_project_readiness` | none | project.view |
 
 Two properties hold across all of them:
@@ -454,6 +455,48 @@ refused state is inferred. Expiry in particular is a comparison against the
 present that the application does not make anywhere and the model cannot make
 reliably, because it is not given today's date. Deciding that a quote has
 lapsed belongs in the quote service, if anywhere.
+
+**Creating a quotation is the first quote write the agent has (T22.3), and it
+cannot commit on its own say-so.** `create_quote` takes only the client and the
+heading. Lines, prices, tax, total, currency, number and status all come from
+`createQuote`, which prices one line at the cost engine's client subtotal — so
+there is no parameter through which the model could state a price at all, and
+the strict schema rejects one if it tries.
+
+The tool runs in two steps, and the second is gated by the SERVER:
+
+- `confirmed: false` previews. It reads the cost and writes nothing.
+- `confirmed: true` creates, and only if the most recent PERSISTED assistant
+  turn holds a preview of exactly this quotation that was not already acted on
+  (`src/lib/ai/tools/confirmation.ts`).
+
+That works because `runConversationTurn` persists the user and assistant
+messages AFTER the agent finishes. A preview from the current turn is not in the
+database while the turn runs, so the agent cannot preview and commit in one
+breath; and a new turn exists only because the user sent a message, so a person
+has necessarily replied in between. The preview's arguments must match the
+commit's once normalised by the service's own schema, so the agent cannot show
+one client and create another. A commit is also refused if an unrelated turn
+came in between, and at most one quotation is created per turn.
+
+What the server cannot decide is whether that reply was a yes — the Darija
+module is explicit that "wakha" is an acknowledgement, not consent, which is
+precisely what a keyword match would get wrong. So the model judges the reply,
+and the server guarantees the reply happened, to the preview being acted on.
+
+`DesignProposal` was not reused. Approving one asserts `design.edit`, which the
+sales role — the one that writes quotations — does not hold. A dedicated
+quote-proposal record with its own approval UI would be a new approval
+architecture; the persisted-turn check is the smallest mechanism that enforces
+confirmation without one, and needs no schema change.
+
+**`quote.create` does not imply cost visibility — but `createQuote` requires
+it.** The service reads the project cost to price the draft, and
+`getProjectCost` asserts `cost.view`. Every role holding `quote.create` also
+holds `cost.view` today, so nobody is blocked and nothing leaks; a test asserts
+that inclusion so a matrix change that broke it fails in CI. The tool returns
+only client-facing figures either way: never the internal total, the margin, or
+the cost breakdown.
 
 There is still no approval tool, and no tool that mutates the canvas directly.
 

@@ -193,9 +193,32 @@ two must never be spoken about as if they were the same number.
   written, and do not offer a price of your own instead.
 - A DRAFT is not what the client has. Say which status it is in, and report the
   blockers when the user asks why it cannot be sent.
-- You cannot create, edit, issue or send a quotation. There is no tool for it.
-  If the user asks you to, say it is done in the interface and that you can read
-  the result afterwards.
+- You cannot edit, issue, send or delete a quotation. There is no tool for any
+  of those. If the user asks, say it is done in the interface and that you can
+  read the result afterwards.
+
+## Creating a quotation
+
+Only when a create_quote tool is available to you. If it is not, this user's
+role cannot create quotations — say so and do not describe one as if you could.
+
+- You supply WHO it is for and how it is headed. The lines, prices, tax, total,
+  currency, number and status are decided by the application from the cost
+  calculation. Never state a price you were not given, and never try to set one.
+- Always two steps. First call create_quote with confirmed=false: this creates
+  NOTHING. Show the user the preview — client, heading, and the subtotal it will
+  be priced at — say it will be a DRAFT and not sent, and ask them to confirm.
+- Only in your NEXT turn, and only if they clearly agreed, call it again with
+  confirmed=true and exactly the same details. The application refuses a
+  confirmed call that does not follow a matching preview in your previous turn.
+- If they change anything, preview again. If they decline or change the
+  subject, create nothing.
+- Never invent a client name. If the user has not said who the quotation is
+  for, ask.
+- If the preview reports no cost calculation, the quotation cannot be created
+  yet. Say what is missing.
+- After creating, report the quotation number and total exactly as returned. It
+  is a draft: the user reviews and issues it from the interface.
 
 ## Where a quotation stands
 
@@ -286,11 +309,15 @@ export function selectCapabilities(snapshot: ProjectSnapshot, grants: AiGrants):
   if (grants.viewProduction && (specApproved || snapshot.documents.productionCount > 0)) {
     active.push('production');
   }
-  // Both halves are required. The grant alone would hand quote instructions to a
-  // production manager on a project nobody has quoted; the count alone is null
-  // for a role that may not read quotations at all, because the snapshot does
-  // not fetch them (`project-context.ts`).
-  if (grants.viewQuotes && (snapshot.quotes?.count ?? 0) > 0) active.push('quotes');
+  // The read grant is always required — the count is null for a role that may
+  // not read quotations, because the snapshot does not fetch them. Beyond that,
+  // either a quote exists to talk about, or the caller may create one (T22.3):
+  // a salesperson on an unquoted project needs the creation instructions. A
+  // production manager on an unquoted project still gets nothing, because they
+  // may read quotes but not create them.
+  if (grants.viewQuotes && ((snapshot.quotes?.count ?? 0) > 0 || grants.createQuotes)) {
+    active.push('quotes');
+  }
 
   return AI_CAPABILITIES.filter((capability) => active.includes(capability));
 }

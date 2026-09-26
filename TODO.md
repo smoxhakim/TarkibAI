@@ -915,6 +915,29 @@ deferred list. No new agent, no new permission, no schema change.
 | Migrations | no schema change |
 | Dependencies | none added |
 
+## T22.3 — Quote Creation ✅ COMPLETE (live evals pending)
+
+- [x] `create_quote` — the agent's first quotation WRITE, behind
+      `grants.createQuotes` and `quote.create` in the service
+- [x] The model supplies only the client and heading; `createQuote` decides
+      lines, prices, tax, total, currency, number and status
+- [x] Two steps, enforced by the server: `confirmed: false` previews and writes
+      nothing; `confirmed: true` creates only against a matching preview in the
+      previous PERSISTED turn (`src/lib/ai/tools/confirmation.ts`)
+- [x] Cannot preview and commit in one turn; refused if the details changed, if
+      the preview was already acted on, or if another turn came in between; at
+      most one quotation per turn
+- [x] Creation never issues: the draft is issued from the interface
+- [x] `DesignProposal` deliberately not reused — approving one needs
+      `design.edit`, which sales does not hold
+- [x] `quote.create ⊆ cost.view` asserted, because `createQuote` reads cost
+- [x] Client-facing figures only; no internal total, margin or breakdown
+- [x] No new permission, no schema change, no dependency
+- [ ] **Live model evals** — written, not yet passed. Every run failed with
+      OpenAI `429: no credits remaining` before a single assertion ran. Rerun
+      with `npx vitest run --config vitest.eval.config.ts src/lib/ai/eval/quote.eval.test.ts`
+      once the account has credit.
+
 ### Deferred out of T22.2 (deliberately)
 
 - [ ] **Expiry as a state.** Nothing compares `validUntil` to the present, and
