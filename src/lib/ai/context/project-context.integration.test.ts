@@ -65,7 +65,7 @@ beforeAll(async () => {
   });
   workspaceId = asWorkspaceId(workspace.id);
 
-  await updateCostSettings(workspaceId, {
+  await updateCostSettings(workspaceId, ownerId, {
     laborType: 'percent',
     laborBp: 3000,
     laborCents: 0,

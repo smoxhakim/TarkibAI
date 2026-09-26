@@ -123,7 +123,7 @@ beforeAll(async () => {
   });
   workspaceId = asWorkspaceId(workspace.id);
 
-  await updateCostSettings(workspaceId, {
+  await updateCostSettings(workspaceId, ownerId, {
     laborType: 'percent',
     laborBp: 3000,
     laborCents: 0,
@@ -137,7 +137,7 @@ beforeAll(async () => {
     taxBp: 2000,
     currency: 'MAD',
   });
-  await updateQuoteSettings(workspaceId, {
+  await updateQuoteSettings(workspaceId, ownerId, {
     companyName: `Quote safety ${suffix}`,
     validityDays: 30,
     numberPrefix: 'Q',

@@ -1343,6 +1343,54 @@ permission cannot tell an empty snapshot from a restorable one, or an
 undescribed project from a ready one. Cross-workspace stays 404 throughout,
 because `assertProjectPermission` calls `assertProjectAccess` first.
 
+### Workspace writes: the service is the boundary, not the route
+
+Six writes were already gated — but only in their route handlers. Nothing was
+reachable past them over HTTP, and that is precisely why it was worth closing: a
+permission that lives in one caller is a permission the next caller can forget,
+which is the shape of every finding the five passes above closed.
+
+| Operation | Permission |
+| --- | --- |
+| `createProject` | **`project.create`** |
+| `createMaterial` | **`material.manage`** |
+| `updateCostSettings` | **`cost.manage`** |
+| `updateQuoteSettings`, `setQuoteLogo`, `removeQuoteLogo` | **`quote.create`** |
+
+**These are workspace-scoped, so the gate is `assertWorkspacePermission`.**
+There is no project row to resolve: `createProject` is the call that makes one,
+and the other five act on the business rather than on a job. A non-member gets
+404 and a member without the capability gets 403, the same shape
+`assertProjectPermission` produces one level down.
+
+**Four permissions, not one, and the difference is the point.** Production adds
+material and may not price it; sales price the work and may not touch the
+catalogue; a designer starts jobs and does neither. Collapsing these onto a
+single "workspace write" gate would erase distinctions the matrix draws
+deliberately.
+
+**`cost.manage`, not `cost.view`, for the costing rules.** Seeing a margin and
+setting the margin the whole business quotes against are different authorities.
+Sales hold `cost.view` and not `cost.manage`, so guarding the rules with
+visibility would hand every salesperson the business's pricing policy. This is
+the one place where the narrower cost permission does the work, and it is why
+both exist.
+
+**The route checks stay.** They are redundant now, and kept on purpose: a
+handler that reads as guarded is easier to review than one that defers its
+authorization out of sight, and the duplication costs a membership lookup on a
+settings write. The same defence-in-depth reasoning as `applyCommands` and
+`updateDraftSpec` asserting for themselves after Task 5.
+
+`createMaterial` was the odd one out of four catalogue writes: `updateMaterial`,
+`setMaterialArchived` and `deleteMaterial` all go through
+`assertMaterialManagement`, which loads the row and then checks. There is no row
+to load before one is created, so the workspace gate is applied directly and all
+four are now refusable at the same layer.
+
+With these, **every project- and workspace-scoped write in TARKIB is authorized
+at the service.** No route is the only boundary for anything.
+
 ---
 
 ## 16. Document Architecture

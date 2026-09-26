@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import type { WorkspaceId } from '@/lib/workspaces/access';
+import { assertWorkspacePermission, type WorkspaceId } from '@/lib/workspaces/access';
 import { ApiError, badRequest } from '@/lib/http/api';
 import { buildObjectKey } from '@/lib/storage/keys';
 import { isStorageConfigured } from '@/lib/storage/config';
@@ -41,10 +41,24 @@ export async function getQuoteSettings(workspaceId: WorkspaceId): Promise<QuoteS
   });
 }
 
+/**
+ * The company identity printed on every quotation.
+ *
+ * `quote.create` — the single quote WRITE permission — because this decides
+ * what a client sees at the top of a document, and the numbering series that
+ * identifies it. Reading the settings is not gated: the panel that displays
+ * them is already behind workspace membership, and there is no price here.
+ *
+ * Asserted at the service rather than only in the route, so the permission
+ * travels with the operation instead of with its one current caller.
+ */
 export async function updateQuoteSettings(
   workspaceId: WorkspaceId,
+  userId: string,
   input: QuoteSettingsPayload
 ): Promise<QuoteSettings> {
+  await assertWorkspacePermission(workspaceId, userId, 'quote.create');
+
   return prisma.quoteSettings.upsert({
     where: { workspaceId },
     update: input,
@@ -67,9 +81,14 @@ export const LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as cons
  */
 export async function setQuoteLogo(
   workspaceId: WorkspaceId,
+  userId: string,
   bytes: Buffer,
   mimeType: string
 ): Promise<QuoteSettings> {
+  // Before the bytes are validated and well before anything is written to R2:
+  // a caller who may not change the quote may not put an image on it either.
+  await assertWorkspacePermission(workspaceId, userId, 'quote.create');
+
   if (!isStorageConfigured()) {
     throw new ApiError(503, 'File storage is not configured, so a logo cannot be stored.', 'storage_unavailable');
   }
@@ -111,7 +130,12 @@ export async function setQuoteLogo(
   return updated;
 }
 
-export async function removeQuoteLogo(workspaceId: WorkspaceId): Promise<QuoteSettings> {
+export async function removeQuoteLogo(
+  workspaceId: WorkspaceId,
+  userId: string
+): Promise<QuoteSettings> {
+  await assertWorkspacePermission(workspaceId, userId, 'quote.create');
+
   const settings = await getQuoteSettings(workspaceId);
   if (!settings.logoObjectKey) return settings;
 

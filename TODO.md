@@ -1260,6 +1260,49 @@ delete every file on it, and spend the business's money on image generation.
 | Dependencies | none added |
 | Role coverage | all six, derived from `can(role, …)` |
 
+### Security hardening — workspace write authorization
+
+Six writes were gated in their route handlers and nowhere else. Not reachable
+past them over HTTP, but a permission that lives in one caller is a permission
+the next caller can forget.
+
+- [x] `createProject` requires `project.create` at the service
+- [x] `createMaterial` requires `material.manage` at the service — it was the
+      odd one out of four catalogue writes; the other three already assert
+      through `assertMaterialManagement`
+- [x] `updateCostSettings` requires `cost.manage`
+- [x] `updateQuoteSettings`, `setQuoteLogo` and `removeQuoteLogo` require
+      `quote.create`
+- [x] `assertWorkspacePermission`, not `assertProjectPermission`: these act on
+      the business, and `createProject` is the call that makes the project a
+      project gate would need
+- [x] Four permissions kept distinct — production adds material without pricing
+      it, sales price without touching the catalogue
+- [x] `cost.manage` not `cost.view` for the costing rules: sales see internal
+      cost and do not set the margin the business quotes against
+- [x] `setQuoteLogo` asserts before the image is validated and before anything
+      reaches R2
+- [x] Route checks kept as defence in depth, so a handler still reads as guarded
+- [x] `userId` threaded into the four settings writes that did not take one;
+      34 test call sites updated to pass the member who owns each workspace
+- [x] No new permission, no matrix change, no schema change
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 564 passed |
+| Focused suite | 42 passed |
+| Affected suites | 135 passed (quotes + costs + materials + projects) |
+| Integration tests | see the run below |
+| Production build | passed, 84 routes |
+| Migrations | no schema change |
+| Dependencies | none added |
+| Role coverage | all six, derived from `can(role, …)` |
+
+**Every project- and workspace-scoped write in TARKIB is now authorized at the
+service layer.** No route is the only boundary for anything.
+
 ### T21 verification record
 
 | Check | Result |

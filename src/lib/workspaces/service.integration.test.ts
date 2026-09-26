@@ -89,7 +89,7 @@ beforeAll(async () => {
     });
   }
 
-  await updateCostSettings(sharedWs, {
+  await updateCostSettings(sharedWs, ownerId, {
     laborType: 'percent', laborBp: 3000, laborCents: 0,
     transportType: 'fixed', transportBp: 0, transportCents: 50_000,
     installType: 'percent', installBp: 1000, installCents: 0,

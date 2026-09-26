@@ -78,11 +78,21 @@ export async function getMaterial(materialId: string, userId: string): Promise<M
   return assertMaterialAccess(materialId, userId);
 }
 
+/**
+ * Adds a material to the shared library.
+ *
+ * `assertMaterialManagement` guards the other three catalogue writes by loading
+ * the row first; there is no row to load here, so the workspace gate is applied
+ * directly. Asserted at the service rather than only in the route, so all four
+ * catalogue writes are refusable at the same layer.
+ */
 export async function createMaterial(
   workspaceId: WorkspaceId,
   userId: string,
   input: CreateMaterialInput
 ): Promise<Material> {
+  await assertWorkspacePermission(workspaceId, userId, 'material.manage');
+
   return prisma.material.create({
     data: {
       workspaceId,

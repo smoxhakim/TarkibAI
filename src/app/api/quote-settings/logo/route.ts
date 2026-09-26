@@ -24,7 +24,7 @@ export async function PUT(req: NextRequest) {
     const bytes = Buffer.from(await req.arrayBuffer());
     const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
     await assertWorkspacePermission(workspaceId, user.id, 'quote.create');
-    return { settings: await setQuoteLogo(workspaceId, bytes, mimeType) };
+    return { settings: await setQuoteLogo(workspaceId, user.id, bytes, mimeType) };
   });
 }
 
@@ -34,6 +34,6 @@ export async function DELETE(req: NextRequest) {
     const user = await requireDbUser();
     const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
     await assertWorkspacePermission(workspaceId, user.id, 'quote.create');
-    return { settings: await removeQuoteLogo(workspaceId) };
+    return { settings: await removeQuoteLogo(workspaceId, user.id) };
   });
 }

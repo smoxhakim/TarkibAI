@@ -20,8 +20,9 @@ export async function PUT(req: NextRequest) {
     const user = await requireDbUser();
     const input = costSettingsSchema.parse(await readJson(req));
     const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
-    // Costing rules are the business's, so changing them is a permission.
+    // Costing rules are the business's, so changing them is a permission. The
+    // service asserts it too — this stays so the route reads as guarded.
     await assertWorkspacePermission(workspaceId, user.id, 'cost.manage');
-    return { settings: await updateCostSettings(workspaceId, input) };
+    return { settings: await updateCostSettings(workspaceId, user.id, input) };
   });
 }

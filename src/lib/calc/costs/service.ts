@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import type { WorkspaceId } from '@/lib/workspaces/access';
 import { badRequest, notFound } from '@/lib/http/api';
 import { assertProjectAccess, assertProjectPermission } from '@/lib/projects/service';
-import { asWorkspaceId } from '@/lib/workspaces/access';
+import { asWorkspaceId, assertWorkspacePermission } from '@/lib/workspaces/access';
 import type { CostSettings, ProjectCost } from '@/generated/prisma/client';
 import {
   asComponentType,
@@ -36,10 +36,24 @@ export async function getCostSettings(workspaceId: WorkspaceId): Promise<CostSet
   return prisma.costSettings.create({ data: { workspaceId, ...DEFAULT_SETTINGS } });
 }
 
+/**
+ * The costing rules every calculation in the workspace is derived from.
+ *
+ * `cost.manage` — "the costing rules that produce them" — not `cost.view`.
+ * Seeing a margin and setting the margin the whole business prices against are
+ * different authorities, and the matrix keeps them apart: sales read costs and
+ * do not set the rules.
+ *
+ * Asserted at the service rather than only in the route, so the permission
+ * travels with the operation instead of with its one current caller.
+ */
 export async function updateCostSettings(
   workspaceId: WorkspaceId,
+  userId: string,
   input: CostSettingsPayload
 ): Promise<CostSettings> {
+  await assertWorkspacePermission(workspaceId, userId, 'cost.manage');
+
   return prisma.costSettings.upsert({
     where: { workspaceId },
     update: input,

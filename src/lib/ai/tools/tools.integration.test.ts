@@ -84,7 +84,7 @@ beforeAll(async () => {
     data: { name: `Other ${suffix}`, members: { create: { userId: outsiderId, role: 'owner' } } },
   });
 
-  await updateCostSettings(workspaceId, {
+  await updateCostSettings(workspaceId, userIds.owner, {
     laborType: 'percent',
     laborBp: 3000,
     laborCents: 0,

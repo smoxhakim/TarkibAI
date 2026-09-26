@@ -21,6 +21,6 @@ export async function PUT(req: NextRequest) {
     const input = quoteSettingsSchema.parse(await readJson(req));
     const { workspaceId } = await resolveActiveWorkspace(user.id, req.nextUrl.searchParams.get('workspaceId'));
     await assertWorkspacePermission(workspaceId, user.id, 'quote.create');
-    return { settings: await updateQuoteSettings(workspaceId, input) };
+    return { settings: await updateQuoteSettings(workspaceId, user.id, input) };
   });
 }
