@@ -21,7 +21,9 @@ import {
 } from '@/lib/materials/service';
 import { calculateProjectMaterials } from '@/lib/calc/materials/service';
 import { computeProjectCost, getProjectCost, updateCostSettings } from '@/lib/calc/costs/service';
-import { createQuote, updateQuote } from '@/lib/quotes/service';
+import { createQuote, issueQuote, updateQuote } from '@/lib/quotes/service';
+import { updateQuoteSettings } from '@/lib/quotes/settings-service';
+import { isStorageConfigured } from '@/lib/storage/config';
 import { seedScene } from '@/lib/canvas/service';
 import { listProposals } from '@/lib/design/service';
 import { asWorkspaceId, type WorkspaceId } from '@/lib/workspaces/access';
@@ -60,6 +62,15 @@ let internalSubtotalCents: number;
  */
 const QUOTE_UNIT_PRICE_CENTS = 783_217;
 const QUOTE_SUBTOTAL_CENTS = QUOTE_UNIT_PRICE_CENTS * 3;
+
+/**
+ * A second project carrying an ISSUED quote, so the lifecycle assertions cover
+ * both states the application actually has.
+ *
+ * Kept separate from the draft above: issuing freezes a quote, and reusing the
+ * one the T22.1 assertions read would change what they see.
+ */
+let issuedProjectId: string | null = null;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -128,7 +139,7 @@ beforeAll(async () => {
   await approveSpec(projectId, userIds.owner);
   await seedScene(projectId, userIds.owner);
 
-  const material = await createMaterial(workspaceId, userIds.owner, {
+  const material: Awaited<ReturnType<typeof createMaterial>> = await createMaterial(workspaceId, userIds.owner, {
     name: 'Alucobond 3mm noir',
     category: 'Panel',
     customCategory: false,
@@ -163,6 +174,51 @@ beforeAll(async () => {
       },
     ],
   });
+
+  // Issuing needs a company name on the workspace, a line, and storage.
+  await updateQuoteSettings(workspaceId, userIds.owner, {
+    companyName: 'Atelier Nour',
+    companyAddress: null,
+    companyPhone: null,
+    companyEmail: null,
+    taxIdentifiers: null,
+    primaryColorHex: null,
+    footerText: null,
+    termsText: null,
+    paymentDetails: null,
+    validityDays: 30,
+    numberPrefix: 'Q',
+  });
+
+  if (isStorageConfigured()) {
+    const second = await createProject(workspaceId, userIds.owner, { title: `Issued ${suffix}` });
+    await updateDraftSpec(second.id, userIds.owner, COMPLETE_SPEC);
+    await approveSpec(second.id, userIds.owner);
+    const secondSelected = await selectProjectMaterial(second.id, userIds.owner, material.id, 'Face');
+    await updateProjectMaterialRequirement(second.id, userIds.owner, secondSelected[0].id, {
+      requiredQuantity: 12,
+      requiredDimensions: null,
+    });
+    await calculateProjectMaterials(second.id, userIds.owner);
+    await computeProjectCost(second.id, userIds.owner);
+
+    const toIssue = await createQuote(second.id, userIds.owner, {
+      clientName: `Issued client ${suffix}`,
+      title: 'Enseigne',
+    });
+    await updateQuote(toIssue.id, userIds.owner, {
+      lines: [
+        {
+          description: 'Enseigne',
+          quantityMilli: 1000,
+          unitLabel: 'u',
+          unitPriceCents: 450_000,
+        },
+      ],
+    });
+    await issueQuote(toIssue.id, userIds.owner);
+    issuedProjectId = second.id;
+  }
 
   const outsiderProject = await createProject(asWorkspaceId(outsiderWorkspace.id), outsiderId, {
     title: `Outsider ${suffix}`,
@@ -472,5 +528,128 @@ describe('the quote tool', () => {
     const result = (await tool!.execute({})) as { quote: null; note: string };
     expect(result.quote).toBeNull();
     expect(result.note).toMatch(/no quotation exists/i);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Quote lifecycle (T22.2)                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Runs get_quote as a role on an arbitrary project in the shared workspace. */
+async function quoteOn(project: string, role: WorkspaceRole) {
+  const access = await resolveProjectAiAccess(project, userIds[role]);
+  const tool = buildToolbox(access).find((entry) => entry.name === 'get_quote');
+  if (!tool) throw new Error(`${role} has no get_quote`);
+  return tool.execute({});
+}
+
+type LifecycleResult = {
+  quote: {
+    status: string;
+    createdAt: Date | string;
+    updatedAt: Date | string;
+    issuedAt: Date | string | null;
+    validUntil: Date | string | null;
+    hasDocument: boolean;
+  } | null;
+  history: { action: string; summary: string; at: Date | string }[];
+  statusNote?: string;
+  blockers?: string[];
+  olderQuotes?: { status: string }[];
+};
+
+describe('quote lifecycle', () => {
+  it('reports the draft state with its dates and no document', async () => {
+    const result = (await run('sales', 'get_quote')) as LifecycleResult;
+
+    expect(result.quote?.status).toBe('draft');
+    // Present on every quote.
+    expect(result.quote?.createdAt).toBeTruthy();
+    expect(result.quote?.updatedAt).toBeTruthy();
+    // A draft has neither, and says so rather than inventing them.
+    expect(result.quote?.issuedAt).toBeNull();
+    expect(result.quote?.validUntil).toBeNull();
+    expect(result.quote?.hasDocument).toBe(false);
+  });
+
+  it('states the only two statuses the application has', async () => {
+    const result = (await run('sales', 'get_quote')) as LifecycleResult;
+    expect(result.statusNote).toMatch(/DRAFT or ISSUED/);
+    // The absent states are named as absent.
+    expect(result.statusNote).toMatch(/no other state/i);
+    expect(result.statusNote).toMatch(/accepted/i);
+    expect(result.statusNote).toMatch(/expired/i);
+  });
+
+  it('never reports a status the schema does not define', async () => {
+    const result = (await run('sales', 'get_quote')) as LifecycleResult;
+    const statuses = [result.quote?.status, ...(result.olderQuotes ?? []).map((q) => q.status)];
+    for (const status of statuses) {
+      if (status === undefined) continue;
+      expect(['draft', 'issued'], `unexpected status ${status}`).toContain(status);
+    }
+  });
+
+  it('reports the blockers that stop a draft being issued', async () => {
+    const result = (await run('sales', 'get_quote')) as LifecycleResult;
+    expect(Array.isArray(result.blockers)).toBe(true);
+  });
+
+  it.runIf(isStorageConfigured())(
+    'reports the issued state with its dates, its document and its history',
+    async () => {
+      expect(issuedProjectId).not.toBeNull();
+      const result = (await quoteOn(issuedProjectId!, 'sales')) as LifecycleResult;
+
+      expect(result.quote?.status).toBe('issued');
+      expect(result.quote?.issuedAt).toBeTruthy();
+      expect(result.quote?.validUntil).toBeTruthy();
+      expect(result.quote?.hasDocument).toBe(true);
+      // An issued quote has nothing left blocking it.
+      expect(result.blockers).toEqual([]);
+
+      // The audit trail the application already keeps, filtered to quotes.
+      expect(result.history.length).toBeGreaterThan(0);
+      expect(result.history.map((event) => event.action)).toContain('quote.issued');
+      for (const event of result.history) {
+        expect(event.action).toMatch(/^quote\./);
+        expect(event.at).toBeTruthy();
+      }
+    }
+  );
+
+  it.runIf(isStorageConfigured())('never leaks the stored document key', async () => {
+    const result = await quoteOn(issuedProjectId!, 'sales');
+    // Only the presence of a document is model-visible, never the R2 key.
+    expect(JSON.stringify(result)).not.toMatch(/pdfObjectKey|objectKey|\.pdf/);
+  });
+
+  it('keeps the cost boundary on the lifecycle payload too', async () => {
+    // The T22.2 fields must not have opened a second route to the internal
+    // figure for a role that may read a quote and not a cost.
+    const result = (await run('production', 'get_quote')) as LifecycleResult & {
+      calculatedSubtotalCents: number | null;
+      divergence: unknown;
+    };
+
+    expect(result.quote?.status).toBe('draft');
+    expect(result.calculatedSubtotalCents).toBeNull();
+    expect(result.divergence).toBeNull();
+    expect(JSON.stringify(result)).not.toContain(String(internalSubtotalCents));
+  });
+
+  it('gives no lifecycle information to a role without quote.view', async () => {
+    for (const role of ['designer', 'worker'] as const) {
+      const access = await resolveProjectAiAccess(projectId, userIds[role]);
+      expect(buildToolbox(access).map((tool) => tool.name), role).not.toContain('get_quote');
+    }
+  });
+
+  it('returns an empty history and no quote when none exists', async () => {
+    const bare = await createProject(workspaceId, userIds.owner, { title: `NoQuote ${suffix}` });
+    const result = (await quoteOn(bare.id, 'sales')) as LifecycleResult;
+
+    expect(result.quote).toBeNull();
+    expect(result.history).toEqual([]);
   });
 });

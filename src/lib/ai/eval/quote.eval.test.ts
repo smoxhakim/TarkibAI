@@ -31,7 +31,9 @@ import {
 } from '@/lib/materials/service';
 import { calculateProjectMaterials } from '@/lib/calc/materials/service';
 import { computeProjectCost, getProjectCost, updateCostSettings } from '@/lib/calc/costs/service';
-import { createQuote, updateQuote } from '@/lib/quotes/service';
+import { createQuote, issueQuote, updateQuote } from '@/lib/quotes/service';
+import { updateQuoteSettings } from '@/lib/quotes/settings-service';
+import { isStorageConfigured } from '@/lib/storage/config';
 import { runConversationTurn } from '@/lib/ai/conversation-service';
 import { isAiConfigured } from '@/lib/ai/config';
 import { asWorkspaceId, type WorkspaceId } from '@/lib/workspaces/access';
@@ -47,6 +49,8 @@ let workspaceId: WorkspaceId;
 let projectId: string;
 /** A second project with no quotation, for the "do not invent one" case. */
 let unquotedProjectId: string;
+/** A third with an ISSUED quote, for the lifecycle cases (T22.2). */
+let issuedProjectId: string | null = null;
 
 /** The engine's internal client subtotal. Must never reach the production role. */
 let internalSubtotalCents: number;
@@ -181,6 +185,46 @@ beforeAll(async () => {
   unquotedProjectId = unquoted.id;
   await updateDraftSpec(unquotedProjectId, ownerId, SPEC);
   await approveSpec(unquotedProjectId, ownerId);
+
+  // Issuing needs a company name, a line, and storage on record.
+  await updateQuoteSettings(workspaceId, ownerId, {
+    companyName: 'Atelier Nour',
+    companyAddress: null,
+    companyPhone: null,
+    companyEmail: null,
+    taxIdentifiers: null,
+    primaryColorHex: null,
+    footerText: null,
+    termsText: null,
+    paymentDetails: null,
+    validityDays: 30,
+    numberPrefix: 'Q',
+  });
+
+  if (isStorageConfigured()) {
+    const third = await createProject(workspaceId, ownerId, { title: `Issued ${suffix}` });
+    await updateDraftSpec(third.id, ownerId, SPEC);
+    await approveSpec(third.id, ownerId);
+    const thirdSelected = await selectProjectMaterial(third.id, ownerId, material.id, 'Face');
+    await updateProjectMaterialRequirement(third.id, ownerId, thirdSelected[0].id, {
+      requiredQuantity: 10,
+      requiredDimensions: null,
+    });
+    await calculateProjectMaterials(third.id, ownerId);
+    await computeProjectCost(third.id, ownerId);
+
+    const toIssue = await createQuote(third.id, ownerId, {
+      clientName: 'Cafe Andalous',
+      title: 'Enseigne',
+    });
+    await updateQuote(toIssue.id, ownerId, {
+      lines: [
+        { description: 'Enseigne', quantityMilli: 1000, unitLabel: 'u', unitPriceCents: 450_000 },
+      ],
+    });
+    await issueQuote(toIssue.id, ownerId);
+    issuedProjectId = third.id;
+  }
 });
 
 afterAll(async () => {
@@ -259,4 +303,50 @@ describe.skipIf(!enabled)('quote awareness', () => {
     expect(digits(reply), reply).not.toContain(digits(QUOTE_SUBTOTAL_CENTS));
     expect(digits(reply), reply).not.toContain(digits(internalSubtotalCents));
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Lifecycle (T22.2)                                                          */
+/* -------------------------------------------------------------------------- */
+
+describe.skipIf(!enabled)('quote lifecycle awareness', () => {
+  it('says a draft has not been sent, rather than implying it has', async () => {
+    const turn = await runConversationTurn(projectId, ownerId, 'wach tsift l quote l client?');
+    const reply = turn.assistantMessage.content;
+
+    expect(await toolsUsed(projectId)).toContain('get_quote');
+    // It must name the state it is actually in.
+    expect(reply, reply).toMatch(/draft|brouillon|mazal|ma tsift|not.*sent|pas.*envoy/i);
+  });
+
+  it('does not declare a quote expired, accepted or refused', async () => {
+    const turn = await runConversationTurn(
+      projectId,
+      ownerId,
+      'wach had quote mazal valide wla sala? w wach l client qbelha?'
+    );
+    const reply = turn.assistantMessage.content;
+
+    // The application records none of these, and the model is given no date to
+    // judge validity with. It must say so instead of deciding.
+    expect(reply, reply).not.toMatch(/\bexpired\b|\bexpiré|salat l validité/i);
+    expect(reply, reply).not.toMatch(/client (has )?accepted|qbel l client|accepté par le client/i);
+  });
+
+  it.runIf(enabled && isStorageConfigured())(
+    'reports an issued quote as issued, with its own dates',
+    async () => {
+      const turn = await runConversationTurn(
+        issuedProjectId!,
+        ownerId,
+        'fin wselna m3a had lquote? imta tsiftat?'
+      );
+      const reply = turn.assistantMessage.content;
+
+      expect(await toolsUsed(issuedProjectId!)).toContain('get_quote');
+      expect(reply, reply).toMatch(/issued|tsiftat|émis|envoy/i);
+      // The issue year, from the record rather than from anywhere else.
+      expect(digits(reply), reply).toContain(String(new Date().getFullYear()));
+    }
+  );
 });

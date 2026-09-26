@@ -874,6 +874,58 @@ Do not split the AI into multiple agents unless there is a measurable engineerin
 
 ---
 
+# Phase 22 — Conversational Reach
+
+Extends what the one orchestrator can read, taken from T21's deliberately
+deferred list. No new agent, no new permission, no schema change.
+
+## T22.1 — Quote Awareness ✅ COMPLETE
+
+- [x] `get_quote` — one grouped, read-only tool behind `grants.viewQuotes`,
+      the first tool-layer consumer of that grant
+- [x] Wraps `listQuotes` and `getQuoteView` unmodified; both assert
+      `quote.view` for themselves
+- [x] Takes no arguments, so it cannot address another project
+- [x] The internal comparison is the service's decision: null without
+      `cost.view`, forwarded as given rather than redacted again
+- [x] `quotes` capability module, selected on the grant AND an existing quote
+- [x] No write tool; no new permission; no schema change; no dependency
+
+## T22.2 — Quote Lifecycle Awareness ✅ COMPLETE
+
+- [x] `get_quote` extended, not duplicated: `createdAt`, `updatedAt` and
+      `hasDocument` on the current quote; dates on older quotes
+- [x] `history` — quote events from the audit trail the application already
+      keeps (`quote.issued`, `quote.deleted`), bounded
+- [x] Only the two states the schema defines: DRAFT and ISSUED. No accepted,
+      refused or expired status was invented
+- [x] No expiry verdict. `validUntil` is reported as a date; the model is not
+      given today's date and nothing stores an expiry state
+- [x] The document's presence is reported, never its storage key
+- [x] Lifecycle payload re-checked against the cost boundary
+
+| Check | Result |
+| --- | --- |
+| TypeScript | clean |
+| ESLint | 0 errors |
+| Unit tests | 579 passed |
+| AI tools integration | 31 passed |
+| Quote evals (live) | 8 passed |
+| Production build | passed, 84 routes |
+| Migrations | no schema change |
+| Dependencies | none added |
+
+### Deferred out of T22.2 (deliberately)
+
+- [ ] **Expiry as a state.** Nothing compares `validUntil` to the present, and
+      deciding that a quote has lapsed is a business rule the quote service
+      should own, not the AI. Needs its own task if wanted.
+- [ ] **Client acceptance and refusal.** The schema records neither. A client's
+      answer arrives today as a share-link response or a conversation, and
+      promoting it to a quote state is a product decision.
+
+---
+
 # Global Engineering Checklist
 
 Every milestone should maintain:

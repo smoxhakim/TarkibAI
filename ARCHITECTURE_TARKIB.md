@@ -438,6 +438,23 @@ Two properties hold across all of them:
   asserts its permission when it runs. A tool that is only safe by omission is
   one refactor away from being unsafe.
 
+**`get_quote` composes a weaker read inside a stronger gate (T22.2).** Its
+`history` comes from `listProjectAudit`, which asserts project access only —
+the audit panel is open to every member. Filtered to `quote.*` events and
+returned solely from a tool that needs `quote.view`, the composed result is
+exactly as private as a quotation. Moving that history anywhere without the
+quote gate would publish quote activity to designer and worker, so it stays
+here.
+
+**The quote lifecycle is what the schema says it is.** `Quote.status` holds
+`draft | issued` and nothing else. The tool reports those two states,
+`createdAt`, `updatedAt`, `issuedAt`, `validUntil` and whether a document
+exists — and the capability module forbids the rest: no expired, accepted or
+refused state is inferred. Expiry in particular is a comparison against the
+present that the application does not make anywhere and the model cannot make
+reliably, because it is not given today's date. Deciding that a quote has
+lapsed belongs in the quote service, if anywhere.
+
 There is still no approval tool, and no tool that mutates the canvas directly.
 
 ---
