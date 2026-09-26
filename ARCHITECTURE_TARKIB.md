@@ -426,6 +426,7 @@ read at all.
 | `get_material_recommendations` | none | project.view; money only with cost.view |
 | `get_cutting_plans` | none | project.view |
 | `get_project_cost` | none | **cost.view** |
+| `get_quote` | none | **quote.view**; the internal comparison only with cost.view |
 | `get_project_readiness` | none | project.view |
 
 Two properties hold across all of them:

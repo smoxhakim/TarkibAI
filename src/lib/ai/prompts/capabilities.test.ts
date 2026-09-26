@@ -74,6 +74,42 @@ describe('capability selection', () => {
     });
   });
 
+  describe('the quotes module (T22.1)', () => {
+    const quoted = snapshotFixture({ quotes: { count: 1, statuses: ['draft'] } });
+
+    it('is absent for every role without quote.view, however many quotes exist', () => {
+      // The snapshot does not even read quotes for these roles, so `quotes` is
+      // null and the module cannot be selected. Asserted with a populated
+      // snapshot anyway, so the grant is what is being tested.
+      for (const role of ['designer', 'worker'] as const) {
+        expect(selectCapabilities(quoted, grantsFor(role)), role).not.toContain('quotes');
+      }
+    });
+
+    it('is present for the roles that may read a quotation', () => {
+      for (const role of ['owner', 'admin', 'sales', 'production'] as const) {
+        expect(selectCapabilities(quoted, grantsFor(role)), role).toContain('quotes');
+      }
+    });
+
+    it('stays out until a quotation actually exists', () => {
+      // Otherwise a production manager gets quote instructions on a project
+      // nobody has quoted.
+      expect(
+        selectCapabilities(snapshotFixture({ quotes: { count: 0, statuses: [] } }), grantsFor('sales'))
+      ).not.toContain('quotes');
+      expect(selectCapabilities(quoted, grantsFor('sales'))).toContain('quotes');
+    });
+
+    it('does not carry the cost module with it', () => {
+      // Reading a quote is not reading a cost, for the one role that has the
+      // first permission and not the second.
+      const active = selectCapabilities(quoted, grantsFor('production'));
+      expect(active).toContain('quotes');
+      expect(active).not.toContain('cost');
+    });
+  });
+
   it('holds production back until there is an approved specification or a package', () => {
     expect(selectCapabilities(snapshotFixture(), grantsFor('production'))).not.toContain('production');
     expect(selectCapabilities(snapshotFixture({ spec: approved }), grantsFor('production'))).toContain(
@@ -107,6 +143,21 @@ describe('capability rendering', () => {
     const text = renderCapabilities(selectCapabilities(snapshotFixture(), grantsFor('worker')));
     expect(text).not.toContain('get_project_cost');
     expect(text).not.toMatch(/margin/i);
+  });
+
+  it('tells the quotes module to read the tool and never to price from itself', () => {
+    const text = renderCapabilities(['quotes']);
+    expect(text).toContain('## Client quotations');
+    expect(text).toContain('get_quote');
+    // The two things that must not happen: inventing a quote, and treating a
+    // client price as the internal cost.
+    expect(text).toMatch(/never invent/i);
+    expect(text).toMatch(/not the internal cost/i);
+  });
+
+  it('warns the quotes module off a margin when no internal comparison is given', () => {
+    const text = renderCapabilities(['quotes']);
+    expect(text).toMatch(/never estimate a margin|never estimate a margin, a\s+profit/i);
   });
 
   it('tells the design module to read before it changes, and to propose rather than apply', () => {

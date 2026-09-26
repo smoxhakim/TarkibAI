@@ -20,7 +20,8 @@ import {
   updateProjectMaterialRequirement,
 } from '@/lib/materials/service';
 import { calculateProjectMaterials } from '@/lib/calc/materials/service';
-import { computeProjectCost, updateCostSettings } from '@/lib/calc/costs/service';
+import { computeProjectCost, getProjectCost, updateCostSettings } from '@/lib/calc/costs/service';
+import { createQuote, updateQuote } from '@/lib/quotes/service';
 import { seedScene } from '@/lib/canvas/service';
 import { listProposals } from '@/lib/design/service';
 import { asWorkspaceId, type WorkspaceId } from '@/lib/workspaces/access';
@@ -37,6 +38,28 @@ let workspaceId: WorkspaceId;
 let projectId: string;
 let outsiderId: string;
 let outsiderProjectId: string;
+
+/**
+ * The internal calculated client subtotal, captured from the cost engine in
+ * `beforeAll`.
+ *
+ * The leak assertions below look for THIS EXACT NUMBER in a cost-blind
+ * payload. Asserting only that `calculatedSubtotalCents` is null would pass
+ * against an implementation that leaked the same figure under a different key.
+ */
+let internalSubtotalCents: number;
+
+/**
+ * The quote's own client-facing subtotal, deliberately set to something the
+ * cost engine did not produce.
+ *
+ * If the quote were left priced from the calculation, its subtotal would EQUAL
+ * the internal figure and "the internal figure is absent" would be
+ * unfalsifiable — the same number would appear legitimately as the client
+ * price. A distinct, non-round price keeps the two separable.
+ */
+const QUOTE_UNIT_PRICE_CENTS = 783_217;
+const QUOTE_SUBTOTAL_CENTS = QUOTE_UNIT_PRICE_CENTS * 3;
 
 const COMPLETE_SPEC: ProjectSpecPatch = {
   projectType: 'enseigne',
@@ -121,6 +144,25 @@ beforeAll(async () => {
   });
   await calculateProjectMaterials(projectId, userIds.owner);
   await computeProjectCost(projectId, userIds.owner);
+
+  // Captured before the quote is repriced, so it is the engine's own figure.
+  const costView = await getProjectCost(projectId, userIds.owner);
+  internalSubtotalCents = costView.cost?.clientSubtotalCents ?? 0;
+
+  const quote = await createQuote(projectId, userIds.owner, {
+    clientName: `Client ${suffix}`,
+    title: 'Enseigne façade',
+  });
+  await updateQuote(quote.id, userIds.owner, {
+    lines: [
+      {
+        description: 'Enseigne lumineuse façade',
+        quantityMilli: 3000,
+        unitLabel: 'm²',
+        unitPriceCents: QUOTE_UNIT_PRICE_CENTS,
+      },
+    ],
+  });
 
   const outsiderProject = await createProject(asWorkspaceId(outsiderWorkspace.id), outsiderId, {
     title: `Outsider ${suffix}`,
@@ -320,5 +362,115 @@ describe('reading computed state', () => {
     };
     expect(result.sheetPlans).toEqual([]);
     expect(result.linearPlans).toEqual([]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Quotations (T22.1)                                                         */
+/* -------------------------------------------------------------------------- */
+
+describe('the quote tool', () => {
+  it('returns the stored quotation to a role that may read one', async () => {
+    const result = (await run('sales', 'get_quote')) as {
+      quote: {
+        number: string;
+        status: string;
+        currency: string;
+        subtotalCents: number;
+        totalCents: number;
+        lines: { description: string; unitPriceCents: number; lineTotalCents: number }[];
+      };
+    };
+
+    // Figures come from the stored rows, not from anything the tool computes.
+    expect(result.quote.number).toMatch(/^Q-\d{4}-\d{4}$/);
+    expect(result.quote.subtotalCents).toBe(QUOTE_SUBTOTAL_CENTS);
+    expect(result.quote.lines).toHaveLength(1);
+    expect(result.quote.lines[0].unitPriceCents).toBe(QUOTE_UNIT_PRICE_CENTS);
+    expect(result.quote.lines[0].lineTotalCents).toBe(QUOTE_SUBTOTAL_CENTS);
+    expect(result.quote.currency).toBe('MAD');
+  });
+
+  it('gives production the client figures and NOT the internal comparison', async () => {
+    // The mandatory case: quote.view yes, cost.view no.
+    const result = (await run('production', 'get_quote')) as {
+      quote: { subtotalCents: number };
+      calculatedSubtotalCents: number | null;
+      divergence: unknown;
+      note: string;
+    };
+
+    // The client-facing price is theirs to see.
+    expect(result.quote.subtotalCents).toBe(QUOTE_SUBTOTAL_CENTS);
+
+    // The internal figure is not, in any form.
+    expect(result.calculatedSubtotalCents).toBeNull();
+    expect(result.divergence).toBeNull();
+
+    // Falsifiable: the engine's own number must appear nowhere in the payload.
+    expect(internalSubtotalCents).toBeGreaterThan(0);
+    expect(internalSubtotalCents).not.toBe(QUOTE_SUBTOTAL_CENTS);
+    expect(JSON.stringify(result)).not.toContain(String(internalSubtotalCents));
+
+    // And the model is told not to reason its way to one.
+    expect(result.note).toMatch(/margin/i);
+  });
+
+  it('gives an owner the internal comparison, because they may see cost', async () => {
+    const result = (await run('owner', 'get_quote')) as {
+      calculatedSubtotalCents: number | null;
+      divergence: { differenceCents: number; direction: string } | null;
+    };
+
+    expect(result.calculatedSubtotalCents).toBe(internalSubtotalCents);
+    // The quote was repriced away from the calculation, so a divergence exists
+    // and the engine — not the model — computed it.
+    expect(result.divergence).not.toBeNull();
+    expect(result.divergence?.differenceCents).toBe(
+      Math.abs(QUOTE_SUBTOTAL_CENTS - internalSubtotalCents)
+    );
+  });
+
+  it('is never handed to a role without quote.view', async () => {
+    for (const role of ['designer', 'worker'] as const) {
+      const access = await resolveProjectAiAccess(projectId, userIds[role]);
+      expect(buildToolbox(access).map((tool) => tool.name), role).not.toContain('get_quote');
+    }
+  });
+
+  it('refuses the permission even if the tool is reached another way', async () => {
+    // A worker's toolbox has no quote tool, so borrow an authorised one and run
+    // it as the worker. The service must refuse regardless of composition.
+    const salesAccess = await resolveProjectAiAccess(projectId, userIds.sales);
+    const tool = buildToolbox(salesAccess).find((entry) => entry.name === 'get_quote');
+    expect(tool).toBeDefined();
+
+    const smuggled = buildToolbox({ ...salesAccess, userId: userIds.worker }).find(
+      (entry) => entry.name === 'get_quote'
+    );
+    // The toolbox is built from the ROLE, which is still sales here, so the
+    // tool exists — and the service still refuses the worker underneath it.
+    await expect(smuggled!.execute({})).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('cannot be pointed at another workspace, whatever the model sends', async () => {
+    await expect(resolveProjectAiAccess(outsiderProjectId, userIds.owner)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it('rejects any argument at all', async () => {
+    await expect(run('sales', 'get_quote', { quoteId: 'anything' })).rejects.toThrow();
+    await expect(run('sales', 'get_quote', { projectId: outsiderProjectId })).rejects.toThrow();
+  });
+
+  it('says plainly when a project has no quotation', async () => {
+    const bare = await createProject(workspaceId, userIds.owner, { title: `Unquoted ${suffix}` });
+    const access = await resolveProjectAiAccess(bare.id, userIds.sales);
+    const tool = buildToolbox(access).find((entry) => entry.name === 'get_quote');
+
+    const result = (await tool!.execute({})) as { quote: null; note: string };
+    expect(result.quote).toBeNull();
+    expect(result.note).toMatch(/no quotation exists/i);
   });
 });

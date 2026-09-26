@@ -40,6 +40,9 @@ export const AI_CAPABILITIES = [
   'materials',
   'cutting',
   'cost',
+  // A quotation is priced from the cost and reaches the client before anything
+  // is fabricated, so it sits here in the chain rather than after production.
+  'quotes',
   'drawings',
   'production',
 ] as const;
@@ -177,6 +180,28 @@ the cost engine.
   one; the user applies it in the interface.`,
   },
 
+  quotes: {
+    title: 'Client quotations',
+    instructions: `
+A quotation is what the CLIENT is charged. It is not the internal cost, and the
+two must never be spoken about as if they were the same number.
+
+- Call get_quote and report what it returns: number, status, the priced lines,
+  subtotal, tax, total, currency, validity. Never invent a quote number, a line,
+  or a total.
+- If no quotation exists, say so plainly. Do not describe one that has not been
+  written, and do not offer a price of your own instead.
+- A DRAFT is not what the client has. Say which status it is in, and report the
+  blockers when the user asks why it cannot be sent.
+- You cannot create, edit, issue or send a quotation. There is no tool for it.
+  If the user asks you to, say it is done in the interface and that you can read
+  the result afterwards.
+- When get_quote returns no internal comparison, the caller may not see internal
+  cost. Answer the quote question from the client-facing figures and say the
+  internal comparison is not available to them — never estimate a margin, a
+  profit, or whether the quote sits above cost.`,
+  },
+
   drawings: {
     title: 'Technical drawings',
     instructions: `
@@ -238,6 +263,11 @@ export function selectCapabilities(snapshot: ProjectSnapshot, grants: AiGrants):
   if (grants.viewProduction && (specApproved || snapshot.documents.productionCount > 0)) {
     active.push('production');
   }
+  // Both halves are required. The grant alone would hand quote instructions to a
+  // production manager on a project nobody has quoted; the count alone is null
+  // for a role that may not read quotations at all, because the snapshot does
+  // not fetch them (`project-context.ts`).
+  if (grants.viewQuotes && (snapshot.quotes?.count ?? 0) > 0) active.push('quotes');
 
   return AI_CAPABILITIES.filter((capability) => active.includes(capability));
 }
