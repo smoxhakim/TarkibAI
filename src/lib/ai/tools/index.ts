@@ -9,6 +9,8 @@ import { listMaterials, listProjectMaterials } from '@/lib/materials/service';
 import { materialQuerySchema } from '@/lib/materials/schema';
 import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
+import { getQuoteView, listQuotes } from '@/lib/quotes/service';
+import { formatQuantity } from '@/lib/quotes/format';
 import { getIntegrityReport } from '@/lib/validation/service';
 import { assertProjectPermission } from '@/lib/projects/service';
 import type { CuttingPlan } from '@/generated/prisma/client';
@@ -293,6 +295,75 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
           note: view.stale
             ? 'SUPERSEDED: computed before a later material calculation. Say it must be recalculated rather than presenting it as the current cost.'
             : 'Computed by the cost engine. Report these figures exactly, in the currency given.',
+        };
+      },
+    });
+  }
+
+  /* ---- Quotations -------------------------------------------------------- */
+
+  if (grants.viewQuotes) {
+    tools.push({
+      name: 'get_quote',
+      description:
+        'Read the project\'s client quotations: number, status, client, currency, the priced lines a client is sent, subtotal, tax and total, validity, and what is blocking an unissued quote. The newest quote is returned in full and older ones as a summary. Report these figures exactly. This READS a quotation and can never create, change, or issue one.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      execute: async (rawArgs) => {
+        emptyObjectSchema.parse(rawArgs ?? {});
+
+        // `listQuotes` asserts `quote.view` for itself, so the gate holds even
+        // if this tool were ever reached without the grant above.
+        const quotes = await listQuotes(projectId, userId);
+        if (quotes.length === 0) {
+          return {
+            quote: null,
+            note: 'No quotation exists for this project. Say so; do not invent a number, a line or a total.',
+          };
+        }
+
+        // The newest is the one being worked on, the same rule the project page
+        // uses. Only it needs the issue blockers and the divergence check.
+        const active = quotes[0];
+        const view = await getQuoteView(active.id, userId);
+
+        return {
+          quote: {
+            number: view.quote.number,
+            status: view.quote.status,
+            title: view.quote.title,
+            clientName: view.quote.clientName,
+            currency: view.quote.currency,
+            lines: view.quote.lines.map((line) => ({
+              description: line.description,
+              quantity: formatQuantity(line.quantityMilli),
+              unitLabel: line.unitLabel,
+              unitPriceCents: line.unitPriceCents,
+              lineTotalCents: line.lineTotalCents,
+            })),
+            subtotalCents: view.quote.subtotalCents,
+            taxBp: view.quote.taxBp,
+            taxCents: view.quote.taxCents,
+            totalCents: view.quote.totalCents,
+            validUntil: view.quote.validUntil,
+            issuedAt: view.quote.issuedAt,
+          },
+          // Null for a caller without `cost.view` — the SERVICE decides that,
+          // here and on every other read path. This tool forwards what it is
+          // given rather than deciding again what counts as money.
+          calculatedSubtotalCents: view.calculatedSubtotalCents,
+          divergence: view.divergence,
+          blockers: view.blockers,
+          warnings: view.warnings,
+          olderQuotes: quotes.slice(1).map((quote) => ({
+            number: quote.number,
+            status: quote.status,
+            totalCents: quote.totalCents,
+            currency: quote.currency,
+          })),
+          note:
+            view.calculatedSubtotalCents === null
+              ? 'A quote PRICE is what the client is charged; it is not the internal cost. No internal comparison is available here, so do not state, estimate or imply a margin, a profit or whether this quote is above cost.'
+              : 'A quote PRICE is what the client is charged. `calculatedSubtotalCents` is the internal calculated client subtotal, and `divergence` is how far this quote sits from it. Report both exactly; do not recompute them.',
         };
       },
     });
