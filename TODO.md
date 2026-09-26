@@ -1294,7 +1294,7 @@ the next caller can forget.
 | Unit tests | 564 passed |
 | Focused suite | 42 passed |
 | Affected suites | 135 passed (quotes + costs + materials + projects) |
-| Integration tests | see the run below |
+| Integration tests | 734 passed against Neon (692 before, 42 added), 35 files, 0 failures, 0 skips |
 | Production build | passed, 84 routes |
 | Migrations | no schema change |
 | Dependencies | none added |
