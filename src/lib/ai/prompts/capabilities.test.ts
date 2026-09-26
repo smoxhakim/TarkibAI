@@ -155,6 +155,30 @@ describe('capability rendering', () => {
     expect(text).toMatch(/not the internal cost/i);
   });
 
+  it('names both quote states and no others (T22.2)', () => {
+    const text = renderCapabilities(['quotes']);
+    expect(text).toMatch(/DRAFT and ISSUED/);
+    // The states the system does NOT have must be named as absent, so the model
+    // is told rather than left to guess. Whitespace-tolerant: the prompt is
+    // hard-wrapped, so a phrase can straddle a newline.
+    expect(text).toMatch(/no\s+accepted/i);
+    expect(text).toMatch(/no\s+refused/i);
+    expect(text).toMatch(/no\s+expired/i);
+  });
+
+  it('forbids the quotes module from judging expiry it cannot compute (T22.2)', () => {
+    const text = renderCapabilities(['quotes']);
+    // The prompt carries no current date, so an expiry verdict would be a guess.
+    expect(text).toMatch(/not\s+given\s+today's\s+date/i);
+    expect(text).toMatch(/do\s+not\s+say\s+a\s+quote\s+has\s+expired/i);
+    expect(text).toMatch(/validUntil/);
+  });
+
+  it('tells the quotes module never to record a client answer (T22.2)', () => {
+    const text = renderCapabilities(['quotes']);
+    expect(text).toMatch(/accepted\s+or\s+refused/i);
+  });
+
   it('warns the quotes module off a margin when no internal comparison is given', () => {
     const text = renderCapabilities(['quotes']);
     expect(text).toMatch(/never estimate a margin|never estimate a margin, a\s+profit/i);

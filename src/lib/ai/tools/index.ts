@@ -12,6 +12,7 @@ import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
 import { getQuoteView, listQuotes } from '@/lib/quotes/service';
 import { formatQuantity } from '@/lib/quotes/format';
 import { getIntegrityReport } from '@/lib/validation/service';
+import { listProjectAudit } from '@/lib/audit/service';
 import { assertProjectPermission } from '@/lib/projects/service';
 import type { CuttingPlan } from '@/generated/prisma/client';
 import { grantsFor, type ProjectAiAccess } from '../access';
@@ -64,6 +65,17 @@ export type ToolDefinition = {
 export type ToolInvocation = { name: string; arguments: unknown };
 
 const emptyObjectSchema = z.object({}).strict();
+
+/**
+ * How much of the audit trail to scan for quote events, and how many to report.
+ *
+ * The trail is shared by every domain, so a project with a busy conversation can
+ * push quote events well down it. Scanning a wider window than is reported keeps
+ * the quote history honest without putting a hundred unrelated events in the
+ * model's context.
+ */
+const AUDIT_SCAN_LIMIT = 100;
+const QUOTE_HISTORY_LIMIT = 10;
 
 /** Validates what the model sends to propose_design_change. */
 const proposeSchema = z.object({
@@ -306,7 +318,7 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
     tools.push({
       name: 'get_quote',
       description:
-        'Read the project\'s client quotations: number, status, client, currency, the priced lines a client is sent, subtotal, tax and total, validity, and what is blocking an unissued quote. The newest quote is returned in full and older ones as a summary. Report these figures exactly. This READS a quotation and can never create, change, or issue one.',
+        'Read the project\'s client quotations and where each one stands: number, status, client, currency, the priced lines a client is sent, subtotal, tax and total, when it was created, last changed and issued, how long it stays valid, whether a sendable document exists, what is blocking an unissued quote, and the record of quotes already issued. The newest quote is returned in full and older ones as a summary. Report these exactly. This READS a quotation and can never create, change, or issue one.',
       parameters: { type: 'object', additionalProperties: false, properties: {} },
       execute: async (rawArgs) => {
         emptyObjectSchema.parse(rawArgs ?? {});
@@ -317,14 +329,30 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
         if (quotes.length === 0) {
           return {
             quote: null,
-            note: 'No quotation exists for this project. Say so; do not invent a number, a line or a total.',
+            history: [],
+            note: 'No quotation exists for this project. Say so; do not invent a number, a line, a total or a date.',
           };
         }
 
         // The newest is the one being worked on, the same rule the project page
         // uses. Only it needs the issue blockers and the divergence check.
         const active = quotes[0];
-        const view = await getQuoteView(active.id, userId);
+        const [view, audit] = await Promise.all([
+          getQuoteView(active.id, userId),
+          listProjectAudit(projectId, userId, { limit: AUDIT_SCAN_LIMIT }),
+        ]);
+
+        // Quote events only. The trail carries every domain's events, and the
+        // rest of it is not this tool's business — nor is it gated by
+        // `quote.view`, which this tool is.
+        const history = audit
+          .filter((event) => event.action.startsWith('quote.'))
+          .slice(0, QUOTE_HISTORY_LIMIT)
+          .map((event) => ({
+            action: event.action,
+            summary: event.summary,
+            at: event.createdAt,
+          }));
 
         return {
           quote: {
@@ -346,6 +374,11 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
             totalCents: view.quote.totalCents,
             validUntil: view.quote.validUntil,
             issuedAt: view.quote.issuedAt,
+            createdAt: view.quote.createdAt,
+            updatedAt: view.quote.updatedAt,
+            // Whether a document actually exists to send. Only the key's
+            // PRESENCE — the key itself is never model-visible.
+            hasDocument: view.quote.pdfObjectKey !== null,
           },
           // Null for a caller without `cost.view` — the SERVICE decides that,
           // here and on every other read path. This tool forwards what it is
@@ -359,7 +392,16 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
             status: quote.status,
             totalCents: quote.totalCents,
             currency: quote.currency,
+            createdAt: quote.createdAt,
+            issuedAt: quote.issuedAt,
+            validUntil: quote.validUntil,
           })),
+          // What has actually happened to this project's quotations, from the
+          // audit trail the application already keeps. Reachable only through
+          // this tool, which needs `quote.view`.
+          history,
+          statusNote:
+            'A quote is DRAFT or ISSUED. The application records no other state — there is no accepted, rejected, or expired status. Report the status as given. `validUntil` is the date the quote says it holds until; report that date and do not declare a quote expired, accepted or refused, because nothing here records that.',
           note:
             view.calculatedSubtotalCents === null
               ? 'A quote PRICE is what the client is charged; it is not the internal cost. No internal comparison is available here, so do not state, estimate or imply a margin, a profit or whether this quote is above cost.'
