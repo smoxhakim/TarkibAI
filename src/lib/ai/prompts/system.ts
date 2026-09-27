@@ -121,7 +121,7 @@ function buildRoleSection(grants: AiGrants): string {
 
   if (grants.createQuotes) {
     lines.push(
-      '- You can create a DRAFT quotation for them — always preview first, and create it only after they confirm the preview in their reply.'
+      '- You can create a DRAFT quotation for them — always preview first; it is created only if they reply with the confirmation code the application shows under your reply.'
     );
   } else if (grants.viewQuotes) {
     lines.push(

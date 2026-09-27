@@ -427,7 +427,7 @@ read at all.
 | `get_cutting_plans` | none | project.view |
 | `get_project_cost` | none | **cost.view** |
 | `get_quote` | none | **quote.view**; the internal comparison only with cost.view |
-| `create_quote` | creates a DRAFT quote, only after a confirmed preview | **quote.create** (the service also reads cost, so cost.view) |
+| `create_quote` | creates a DRAFT quote, only when the user's reply is the confirmation code the application showed for that exact preview | **quote.create** (the service also reads cost, so cost.view) |
 | `get_project_readiness` | none | project.view |
 
 Two properties hold across all of them:
@@ -463,32 +463,63 @@ heading. Lines, prices, tax, total, currency, number and status all come from
 there is no parameter through which the model could state a price at all, and
 the strict schema rejects one if it tries.
 
-The tool runs in two steps, and the second is gated by the SERVER:
+The tool runs in two steps, and the second is gated by the SERVER. Consent is
+never read from the model's arguments — the model can send `confirmed: true`
+whenever it likes. It is read from the user's own message, which reaches the
+toolbox from the route (`ToolTurn.userMessage`) and which the model cannot
+write (`src/lib/ai/tools/confirmation.ts`).
 
-- `confirmed: false` previews. It reads the cost and writes nothing.
-- `confirmed: true` creates, and only if the most recent PERSISTED assistant
-  turn holds a preview of exactly this quotation that was not already acted on
-  (`src/lib/ai/tools/confirmation.ts`).
+- `confirmed: false` previews. It reads the cost and writes nothing. The
+  APPLICATION then appends a fixed line to the reply
+  (`strings.chat.quoteConfirmation`): who the draft is for, its title, that it is
+  not sent and takes the next number, and a six-digit code. The model is not
+  given the code, so it cannot put it in a sentence that misdescribes it.
+- `confirmed: true` creates only if ALL of these hold, checked under one lock:
+  1. the most recent PERSISTED assistant turn previewed exactly these details
+     and made no confirmed call of its own;
+  2. no quotation has been created on the project since that turn was persisted;
+  3. the user's whole message this turn is the code — Arabic-Indic digits,
+     spacing and a trailing full stop are forgiven, nothing else is;
+  4. the code, recomputed NOW, still matches.
 
-That works because `runConversationTurn` persists the user and assistant
-messages AFTER the agent finishes. A preview from the current turn is not in the
-database while the turn runs, so the agent cannot preview and commit in one
-breath; and a new turn exists only because the user sent a message, so a person
-has necessarily replied in between. The preview's arguments must match the
-commit's once normalised by the service's own schema, so the agent cannot show
-one client and create another. A commit is also refused if an unrelated turn
-came in between, and at most one quotation is created per turn.
+The code is a hash of the project, the person, the client and heading, the
+title the quotation will carry, the cost calculation it is priced from and that
+calculation's subtotal. So a recalculated price, a renamed project, a changed
+client or a colleague sending someone else's code all fail at step 4. It is not
+secret and does not need to be: its job is to be something only a deliberate
+reply produces, that stops matching when the write changes.
 
-What the server cannot decide is whether that reply was a yes — the Darija
-module is explicit that "wakha" is an acknowledgement, not consent, which is
-precisely what a keyword match would get wrong. So the model judges the reply,
-and the server guarantees the reply happened, to the preview being acted on.
+Why each piece is there:
+
+- **Persistence order** (step 1). `runConversationTurn` persists the turn AFTER
+  the agent finishes, so a preview from the current turn is invisible to the
+  commit: the agent cannot ask and answer its own question, and a later turn
+  exists only because a person sent a message. An intervening turn makes the
+  preview stale, and any confirmed call — even a refused one — spends it.
+- **The code** (steps 3–4). Without it the server knew a reply happened, not
+  that it was a yes; "wakha", "ok", a question and "la, ma tdirch …" all reached
+  the model as equally valid. Keyword matching was rejected because the Darija
+  module is explicit that "wakha" acknowledges rather than consents, and because
+  a refusal can quote the very word a matcher looks for. Requiring the whole
+  message to be the code refuses all of them without interpreting language.
+- **The lock and step 2.** The "already acted on" signal in step 1 is the
+  committing turn's own record, which does not exist until that turn ends. Two
+  requests carrying the same code — a double submit, a second tab — could both
+  pass it. A transaction-scoped Postgres advisory lock (`pg_advisory_xact_lock`,
+  no table, released by the database however the transaction ends) serialises
+  the check with the write, and step 2 sees the quotation the first one created.
+  Timestamps compared in step 2 are both stamped by Prisma on the application
+  server, not by the database.
 
 `DesignProposal` was not reused. Approving one asserts `design.edit`, which the
 sales role — the one that writes quotations — does not hold. A dedicated
-quote-proposal record with its own approval UI would be a new approval
-architecture; the persisted-turn check is the smallest mechanism that enforces
-confirmation without one, and needs no schema change.
+quote-proposal record with its own approval button would be a new approval
+architecture with a schema change; the code gives the same guarantee — an
+explicit, server-verified act by the person, bound to exactly what they were
+shown — inside the conversation that already exists.
+
+What remains the model's job is only what it cannot get wrong unsafely: it
+decides WHEN to call the tool. Calling it at the wrong moment creates nothing.
 
 **`quote.create` does not imply cost visibility — but `createQuote` requires
 it.** The service reads the project cost to price the draft, and

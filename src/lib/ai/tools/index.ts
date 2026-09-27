@@ -10,11 +10,12 @@ import { materialQuerySchema } from '@/lib/materials/schema';
 import { listLinearPlans, listPlans } from '@/lib/calc/cutting/service';
 import { getCostSettings, getProjectCost } from '@/lib/calc/costs/service';
 import { createQuote, getQuoteView, listQuotes, type QuoteWithLines } from '@/lib/quotes/service';
-import { createQuoteSchema } from '@/lib/quotes/schema';
+import { createQuoteSchema, type CreateQuotePayload } from '@/lib/quotes/schema';
 import { formatQuantity } from '@/lib/quotes/format';
 import { getIntegrityReport } from '@/lib/validation/service';
 import { listProjectAudit } from '@/lib/audit/service';
-import { assertProjectPermission } from '@/lib/projects/service';
+import { assertProjectPermission, getProject } from '@/lib/projects/service';
+import { strings } from '@/lib/strings';
 import type { CuttingPlan } from '@/generated/prisma/client';
 import { grantsFor, type ProjectAiAccess } from '../access';
 import {
@@ -23,7 +24,13 @@ import {
   PROPOSE_DESIGN_CHANGE_SCHEMA,
   SPEC_PATCH_JSON_SCHEMA,
 } from './schemas';
-import { checkPreviousTurnPreview } from './confirmation';
+import {
+  checkPreviousTurnPreview,
+  codeInMessage,
+  confirmationCode,
+  withConfirmationLock,
+  type ConfirmationRefusal,
+} from './confirmation';
 
 /**
  * The agent's tool surface.
@@ -66,6 +73,24 @@ export type ToolDefinition = {
 };
 
 export type ToolInvocation = { name: string; arguments: unknown };
+
+/**
+ * What the toolbox knows about the turn it serves, beyond who is asking.
+ *
+ * `userMessage` is the text the person sent to start this turn, exactly as the
+ * route received it. It is the only proof of consent a confirmed write accepts:
+ * the model can call a tool with anything, but it cannot write the user's
+ * message. Absent — a test or harness building a toolbox of its own — every
+ * confirmed write is refused.
+ *
+ * `notices` are lines the APPLICATION appends to the reply after the model's
+ * text, so what a confirmation code creates is stated in the application's
+ * words and cannot be reworded, softened or left out by the model.
+ */
+export type ToolTurn = {
+  readonly userMessage?: string;
+  readonly notices: string[];
+};
 
 const emptyObjectSchema = z.object({}).strict();
 
@@ -125,6 +150,71 @@ function quoteIntent(args: unknown): string | null {
   });
 }
 
+type QuoteToConfirm =
+  | { ready: true; title: string; subtotalCents: number; code: string }
+  | { ready: false; blockedReason: string | null };
+
+/**
+ * The quotation `createQuote` would build NOW, reduced to what the user has to
+ * have agreed to, and the confirmation code for it.
+ *
+ * The code covers the project, the person, the client and heading, the title
+ * the quotation will actually carry, and the cost calculation it is priced from
+ * together with that calculation's subtotal. Recomputed at commit, so a
+ * recalculated cost, a changed client or a different person produces a code the
+ * user was never shown.
+ */
+async function quoteToConfirm(
+  projectId: string,
+  userId: string,
+  payload: CreateQuotePayload
+): Promise<QuoteToConfirm> {
+  const [view, project] = await Promise.all([
+    getProjectCost(projectId, userId),
+    getProject(projectId, userId),
+  ]);
+  if (!view.cost) return { ready: false, blockedReason: view.blockedReason };
+
+  // The same fallback `createQuote` applies, so the preview names the title the
+  // quotation will really have rather than "none".
+  const title = payload.title?.trim() || project.title;
+  const code = confirmationCode([
+    'create_quote',
+    projectId,
+    userId,
+    quoteIntent(payload),
+    title,
+    view.cost.id,
+    view.cost.clientSubtotalCents,
+  ]);
+  return { ready: true, title, subtotalCents: view.cost.clientSubtotalCents, code };
+}
+
+/**
+ * Fills `{name}` placeholders in a strings-module template.
+ *
+ * A function replacement, not a string one: a client called "A$&B" must come out
+ * as written, not with `$&` expanded by `String.replace`.
+ */
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (placeholder, key: string) => values[key] ?? placeholder);
+}
+
+/** What the model is told when a confirmed create_quote is refused. */
+const QUOTE_REFUSAL_NOTES: Record<ConfirmationRefusal, string> = {
+  no_preview:
+    'There is no preview of this quotation in your previous turn. Call create_quote with confirmed=false, show the user the result, and create it only after they confirm.',
+  // Also returned when the previous turn's confirmed call was itself refused:
+  // any confirmed call spends the preview, so nothing more is created from it.
+  already_committed:
+    'That preview has already been acted on — your previous turn already tried to create from it, or a quotation has been created on this project since. Nothing more is created from it. If the user wants a quotation, preview it again.',
+  changed: 'These details differ from the preview the user saw. Preview the new details and ask again.',
+  not_confirmed:
+    'The user\'s message is not the confirmation code, so it is not agreement to create this quotation, whatever it says. Answer what they actually said. It is created only if they reply with the code alone.',
+  code_mismatch:
+    'The code the user sent does not match this quotation as it would be created now: it was mistyped, the cost or the details changed since the preview, or the preview was shown to someone else. Preview it again; a new code will be shown.',
+};
+
 /** The client-facing view of a quotation the agent just created. */
 function createdQuoteView(quote: QuoteWithLines) {
   return {
@@ -155,7 +245,10 @@ const MAX_MATERIAL_RESULTS = 25;
 /* Toolbox                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
+export function buildToolbox(
+  access: ProjectAiAccess,
+  turn: ToolTurn = { notices: [] }
+): ToolDefinition[] {
   const { projectId, userId, workspaceId } = access;
   const grants = grantsFor(access.role);
   const tools: ToolDefinition[] = [];
@@ -481,16 +574,16 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
     /**
      * At most one quotation per turn, however often the model calls this.
      *
-     * The previous-turn check below stops a second commit in a LATER turn; this
-     * stops one in the SAME turn, where the preview being acted on is still the
-     * last persisted one and would otherwise match twice.
+     * The lock and the "written since the preview" check below would refuse a
+     * second commit anyway; this answers it without a round trip and with the
+     * number already created.
      */
     let createdThisTurn: QuoteWithLines | null = null;
 
     tools.push({
       name: 'create_quote',
       description:
-        'Create a DRAFT client quotation for this project, priced by the application from the project\'s cost calculation. You supply only who it is for and how it is headed; the lines, prices, tax, total, number and status are decided by the application. Two steps, always: call with confirmed=false to preview — nothing is created — show the user exactly what would be created and ask them to confirm; then, only in your NEXT turn and only if they agreed, call again with confirmed=true and the same details. It never issues or sends a quotation.',
+        'Create a DRAFT client quotation for this project, priced by the application from the project\'s cost calculation. You supply only who it is for and how it is headed; the lines, prices, tax, total, number and status are decided by the application. Two steps, always: call with confirmed=false to preview — nothing is created — and show the user what would be created; the application then shows them a confirmation code under your reply. Only in your NEXT turn, and only if their reply is that code, call again with confirmed=true and the same details. Any other reply creates nothing. It never issues or sends a quotation.',
       parameters: CREATE_QUOTE_JSON_SCHEMA as unknown as Record<string, unknown>,
       execute: async (rawArgs) => {
         const { confirmed, ...fields } = createQuoteArgsSchema.parse(rawArgs ?? {});
@@ -505,15 +598,25 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
           // PREVIEW. Reads only. `getProjectCost` asserts `cost.view`, which
           // every role holding `quote.create` also holds — and `createQuote`
           // reads the same cost, so a role without it could not create anyway.
-          const view = await getProjectCost(projectId, userId);
-          if (!view.cost) {
+          const pending = await quoteToConfirm(projectId, userId, payload);
+          if (!pending.ready) {
             return {
               created: false,
               preview: null,
-              blockedReason: view.blockedReason,
+              blockedReason: pending.blockedReason,
               note: 'A quotation is priced from the cost calculation and there is none yet. Say what is missing; do not offer to create one.',
             };
           }
+
+          // The code goes to the USER, in the application's words, and never to
+          // the model: a model that does not know the code cannot put it in a
+          // sentence that misdescribes what typing it does.
+          const notice = fill(strings.chat.quoteConfirmation, {
+            client: payload.clientName,
+            title: pending.title,
+            code: pending.code,
+          });
+          if (!turn.notices.includes(notice)) turn.notices.push(notice);
 
           return {
             created: false,
@@ -522,14 +625,14 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
               clientAddress: payload.clientAddress ?? null,
               clientPhone: payload.clientPhone ?? null,
               clientEmail: payload.clientEmail ?? null,
-              title: payload.title ?? null,
+              title: pending.title,
               description: payload.description ?? null,
               status: 'draft',
               // The single line it will be priced at, straight from the cost
               // engine. Tax and total are computed when it is created.
-              pricedAtSubtotalCents: view.cost.clientSubtotalCents,
+              pricedAtSubtotalCents: pending.subtotalCents,
             },
-            note: 'NOTHING HAS BEEN CREATED. Show the user these details and ask them to confirm. It will be a DRAFT, not sent to anyone, and creating it uses the next number in the quote sequence. Only if they clearly agree, call create_quote again in your next turn with confirmed=true and exactly these details. "wakha" or "ok" said in passing is not agreement to a new document; if in doubt, ask.',
+            note: 'NOTHING HAS BEEN CREATED. Show the user these details: it will be a DRAFT, not sent to anyone, and creating it uses the next number in the quote sequence. The application adds a confirmation code under your reply by itself; do not write, guess or repeat a code. The quotation is created only if the user\'s next message is that code alone — "iyeh", "wakha", "ok" or anything else creates nothing. Call create_quote with confirmed=true and exactly these details only when they sent the code.',
           };
         }
 
@@ -542,24 +645,47 @@ export function buildToolbox(access: ProjectAiAccess): ToolDefinition[] {
           };
         }
 
-        const intent = quoteIntent(fields);
-        const check = await checkPreviousTurnPreview(projectId, 'create_quote', isQuoteCommit, (recorded) =>
-          quoteIntent(recorded) === intent
+        const intent = quoteIntent(payload);
+        const outcome = await withConfirmationLock(
+          projectId,
+          'create_quote',
+          async (): Promise<{ refused: ConfirmationRefusal } | { quote: QuoteWithLines }> => {
+            const check = await checkPreviousTurnPreview(
+              projectId,
+              'create_quote',
+              isQuoteCommit,
+              (recorded) => quoteIntent(recorded) === intent
+            );
+            if (!check.ok) return { refused: check.reason };
+
+            // The turn that acted on this preview may not be persisted yet — a
+            // double submit, a second tab — so its recorded call is not proof
+            // enough. A quotation written since the preview is.
+            const quotes = await listQuotes(projectId, userId);
+            if (quotes.some((quote) => quote.createdAt > check.previewAt)) {
+              return { refused: 'already_committed' };
+            }
+
+            // Consent is the USER's message, never the model's arguments.
+            const typed = codeInMessage(turn.userMessage);
+            if (!typed) return { refused: 'not_confirmed' };
+
+            const pending = await quoteToConfirm(projectId, userId, payload);
+            if (!pending.ready || typed !== pending.code) return { refused: 'code_mismatch' };
+
+            return { quote: await createQuote(projectId, userId, payload) };
+          }
         );
 
-        if (!check.ok) {
-          const why = {
-            no_preview:
-              'There is no preview of this quotation in your previous turn. Call create_quote with confirmed=false, show the user the result, and create it only after they agree.',
-            already_committed:
-              'That preview was already turned into a quotation. Do not create it again; preview a new one if the user wants another.',
-            changed:
-              'These details differ from the preview the user saw. Preview the new details and ask again.',
-          }[check.reason];
-          return { created: false, refused: check.reason, note: `NOTHING WAS CREATED. ${why}` };
+        if ('refused' in outcome) {
+          return {
+            created: false,
+            refused: outcome.refused,
+            note: `NOTHING WAS CREATED. ${QUOTE_REFUSAL_NOTES[outcome.refused]}`,
+          };
         }
 
-        const quote = await createQuote(projectId, userId, payload);
+        const quote = outcome.quote;
         createdThisTurn = quote;
 
         return {

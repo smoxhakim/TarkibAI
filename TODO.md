@@ -927,6 +927,15 @@ deferred list. No new agent, no new permission, no schema change.
 - [x] Cannot preview and commit in one turn; refused if the details changed, if
       the preview was already acted on, or if another turn came in between; at
       most one quotation per turn
+- [x] **Confirmation security review:** consent is server-verified, not
+      model-judged. The application appends a six-digit code under the preview;
+      the commit requires the user's WHOLE message to be that code, recomputed
+      from the current project, person, details, title and cost calculation.
+      "wakha", "ok", questions, refusals, changed details, stale or foreign
+      codes and a model sending `confirmed: true` on its own all create nothing
+- [x] Concurrent double submit closed: check and write run under a
+      transaction-scoped Postgres advisory lock, and a quotation created since
+      the preview spends it
 - [x] Creation never issues: the draft is issued from the interface
 - [x] `DesignProposal` deliberately not reused — approving one needs
       `design.edit`, which sales does not hold

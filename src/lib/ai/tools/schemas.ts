@@ -204,7 +204,7 @@ const CREATE_QUOTE_JSON_SCHEMA = {
     confirmed: {
       type: 'boolean',
       description:
-        'false to PREVIEW: nothing is created, and you show the user what would be. true to CREATE — only after the user has explicitly agreed to that preview in their reply, and with exactly the same details. A true call without that preview in your previous turn is refused.',
+        'false to PREVIEW: nothing is created, you show the user what would be, and the application shows them a confirmation code. true to CREATE — only when the user\'s reply is that code alone, and with exactly the same details. The application checks the code against the user\'s own message; a true call after any other reply, or without that preview in your previous turn, is refused.',
     },
   },
 } as const;
