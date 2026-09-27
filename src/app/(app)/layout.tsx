@@ -23,11 +23,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <>
           <header className="border-b border-line">
-            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
               <Link href="/" className="text-lg font-semibold tracking-tight">
                 {strings.app.name}
               </Link>
-              <nav className="flex items-center gap-3 text-sm">
+              {/* Wraps rather than overflowing: seven links plus the bell and the account
+                  button are wider than a phone, and a non-wrapping row pushed the
+                  account button — the only way to sign out — off-screen. */}
+              <nav className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 text-sm">
                 <Show when="signed-in">
                   <Link href="/dashboard" className="text-ink-muted transition-colors hover:text-ink">
                     {strings.nav.dashboard}

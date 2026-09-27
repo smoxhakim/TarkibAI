@@ -1760,3 +1760,90 @@ create/rename/archive/delete were verified through the service layer against the
 real database rather than by driving the browser as a signed-in user.
 
 Before implementation, the agent must announce the milestone in one line and wait for confirmation where required by the development instructions.
+
+---
+
+# Real Testing Readiness
+
+Audit of what a real user can test end-to-end today, done before the first real
+product test. Kept at the end of this file so it does not collide with active
+milestone sections.
+
+### What each stage needs from the environment
+
+| Stage | Needs | Without it |
+| --- | --- | --- |
+| Sign in, workspace, projects | Postgres + Clerk keys | app does not boot (Clerk throws "Missing publishableKey") |
+| Conversation → specification | `OPENAI_API_KEY` | **hard blocker**: the chat says it is not configured, and the specification can only be written by the conversation, so approval, canvas, materials, cost and quote are all unreachable |
+| Materials, canvas, cutting, drawings, cost, draft quote + PDF preview | nothing extra | — |
+| Issue a quote, production package, file uploads | `R2_*` + bucket CORS for the app origin | each panel shows a "File storage is not configured" blocker |
+| Mockups | `REPLICATE_API_TOKEN`, `INNGEST_EVENT_KEY`, locally `npx inngest-cli@latest dev` | panel says generation is not configured |
+
+There is **no seed or fixture mechanism**, and none is needed: a new user gets a
+personal workspace and default costing rules on first use. The only data a
+tester must enter by hand is the workspace's material library and the company
+name in quote settings (about two minutes). No test accounts exist; each tester
+signs up through Clerk.
+
+### End-to-end test path (Signage domain)
+
+1. Sign up / sign in. A personal workspace is created automatically.
+2. Setup, once per workspace:
+   - **Quotes** settings: set the company name (issuing a quote is blocked without it).
+   - **Costing** settings: review the defaults (margin, tax, labour).
+   - **Materials**: add at least one priced material, e.g. a sheet
+     (Alucobond 3050 × 1500 mm) and a linear bar (aluminium profile, 6 m).
+3. **Projects**: create a project, domain *Signage & shopfronts*.
+4. **Conversation**: describe the job in Darija, e.g. *"bghit enseigne dyal
+   restaurant 4m f 1m, alucobond noir, LED, m3l9a f façade, outdoor, wa7da"*.
+   The Specification panel fills in and lists what is still missing.
+5. **Specification**: when nothing is missing, *Approve specification*.
+6. **Design**: Smart Canvas → *Build from specification*. Optionally ask the
+   assistant for a design change and accept or reject it under Design proposals.
+7. **Materials**: add library materials to the project, set required
+   quantities, *Calculate*. Optional: cutting plan, linear cuts, issue a drawing.
+8. **Cost**: calculate the project cost.
+9. **Quote**: create a draft for a client, edit lines, *Preview* the PDF,
+   then *Issue* (needs R2).
+10. **Production**: generate the production package (needs R2).
+11. Optional: mockup (needs Replicate + Inngest), client share link.
+
+### Fixed during the audit
+
+- [x] `danger` colour token was never defined, so ~26 error and blocker
+      messages (quote, production, integrity, versions, sharing, comments,
+      workspace) rendered in the body colour, indistinguishable from text
+- [x] Header nav did not wrap: at phone width the page was ~620 px wide and
+      the account button (the only way to sign out) was off-screen
+- [x] Project page had no error boundary; a failed read showed the framework's
+      generic crash screen with no retry and no way back
+- [x] Error boundaries called `reset()`, which in Next 16.3 re-renders without
+      re-fetching, so "Try again" could not recover from a server-side failure;
+      they now call `retry()`
+
+### Known limitations (not blockers)
+
+- [ ] The light theme never renders. `@theme` nested in
+      `@media (prefers-color-scheme: dark)` is hoisted by Tailwind 4, so the dark
+      values always win. The app is consistently dark and legible; enabling the
+      light theme is a visual change that needs its own review.
+- [ ] The project page is one long column of ~20 panels with no in-page
+      navigation. Workable on desktop, long on a phone.
+- [ ] Deleting a draft quote has no confirmation step (left alone: quote UI is
+      outside this audit's scope while T22.3 is in progress).
+- [ ] `npm ci` fails on the committed lockfile with npm 10.9 (missing optional
+      `@emnapi/*` entries). `npm install`, which the README documents, works.
+- [ ] The chat request is capped at 60 s (Vercel Hobby). A long multi-tool
+      turn can time out; the panel then shows a generic failure and restores
+      the draft, so nothing is lost.
+
+### Verification (local Postgres 16, no Clerk/OpenAI/R2 keys)
+
+| Check | Result |
+| --- | --- |
+| Migrations from empty | all 24 applied |
+| TypeScript | clean |
+| ESLint | 0 errors (27 pre-existing warnings) |
+| Unit tests | 579 passed |
+| Integration tests | 700 passed, 39 skipped, 12 failed — all 12 are "File storage is not configured" (no R2 locally), not code |
+| Production build | passed |

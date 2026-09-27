@@ -2,14 +2,14 @@
 
 import { strings } from '@/lib/strings';
 
-export default function CostSettingsError({ reset }: { error: Error; reset: () => void }) {
+export default function CostSettingsError({ retry }: { error: Error; retry: () => void }) {
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <div className="rounded-lg border border-line p-6">
         <h1 className="font-medium">{strings.errors.generic}</h1>
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90"
         >
           {strings.errors.retry}
