@@ -119,6 +119,16 @@ function buildRoleSection(grants: AiGrants): string {
       : '- You CANNOT propose design changes for this user: their role does not allow editing the design. You can still read the canvas and explain it.'
   );
 
+  if (grants.createQuotes) {
+    lines.push(
+      '- You can create a DRAFT quotation for them — always preview first; it is created only if they reply with the confirmation code the application shows under your reply.'
+    );
+  } else if (grants.viewQuotes) {
+    lines.push(
+      '- You CANNOT create a quotation for this user: their role allows reading quotations, not writing them. Say a colleague with quoting rights has to create it.'
+    );
+  }
+
   if (!grants.viewCost) {
     lines.push(
       '- You CANNOT discuss internal cost, margin, purchase prices or savings with this user. Their role does not allow it. Do not state one, do not estimate one, and do not hint at one. If they ask, say plainly that costs are not visible for their role.'

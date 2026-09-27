@@ -51,6 +51,8 @@ let projectId: string;
 let unquotedProjectId: string;
 /** A third with an ISSUED quote, for the lifecycle cases (T22.2). */
 let issuedProjectId: string | null = null;
+/** The library material, reused to price the creation scenarios (T22.3). */
+let materialId: string;
 
 /** The engine's internal client subtotal. Must never reach the production role. */
 let internalSubtotalCents: number;
@@ -151,6 +153,7 @@ beforeAll(async () => {
     sheetHeightMm: 1220,
     unitPriceCents: 45_000,
   });
+  materialId = material.id;
   const selected = await selectProjectMaterial(projectId, ownerId, material.id, 'Face');
   await updateProjectMaterialRequirement(projectId, ownerId, selected[0].id, {
     requiredQuantity: 24,
@@ -349,4 +352,166 @@ describe.skipIf(!enabled)('quote lifecycle awareness', () => {
       expect(digits(reply), reply).toContain(String(new Date().getFullYear()));
     }
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* Creation (T22.3)                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A fresh costed project with no quotation, so each scenario counts from zero.
+ *
+ * Sharing one would make "exactly one quotation was created" depend on which
+ * scenario ran first.
+ */
+async function freshCostedProject(label: string): Promise<string> {
+  const project = await createProject(workspaceId, ownerId, { title: `${label} ${suffix}` });
+  await updateDraftSpec(project.id, ownerId, SPEC);
+  await approveSpec(project.id, ownerId);
+  const selected = await selectProjectMaterial(project.id, ownerId, materialId, 'Face');
+  await updateProjectMaterialRequirement(project.id, ownerId, selected[0].id, {
+    requiredQuantity: 12,
+    requiredDimensions: null,
+  });
+  await calculateProjectMaterials(project.id, ownerId);
+  await computeProjectCost(project.id, ownerId);
+  return project.id;
+}
+
+/** The create_quote calls on the most recent turn, with their confirmation flag. */
+async function createCalls(project: string): Promise<{ confirmed: unknown }[]> {
+  const row = await prisma.chatMessage.findFirstOrThrow({
+    where: { projectId: project, role: 'assistant' },
+    orderBy: { createdAt: 'desc' },
+  });
+  const calls = Array.isArray(row.toolCalls) ? row.toolCalls : [];
+  return calls
+    .filter((call) => typeof call === 'object' && call !== null && (call as { name?: string }).name === 'create_quote')
+    .map((call) => ((call as { arguments?: { confirmed?: unknown } }).arguments ?? {}) as { confirmed: unknown });
+}
+
+const quoteCount = (project: string) => prisma.quote.count({ where: { projectId: project } });
+
+/** A reply without the application's confirmation line. */
+function withoutConfirmationLine(reply: string): string {
+  return reply
+    .split('\n\n')
+    .filter((paragraph) => !/reply with only this code: \d{6}\./.test(paragraph))
+    .join('\n\n');
+}
+
+/** The code in the confirmation line the application appended to a reply. */
+function confirmationCodeIn(reply: string): string {
+  const match = reply.match(/reply with only this code: (\d{6})\./);
+  if (!match) throw new Error(`No confirmation code in the reply: ${reply}`);
+  return match[1];
+}
+
+describe.skipIf(!enabled)('quote creation', () => {
+  it('previews first and creates nothing on the request itself', async () => {
+    const project = await freshCostedProject('Create');
+    await runConversationTurn(project, ownerId, 'dir lia quote l client Cafe Andalous');
+
+    // It must have previewed, and must not have committed in the same turn.
+    const calls = await createCalls(project);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.some((call) => call.confirmed === true)).toBe(false);
+    expect(await quoteCount(project)).toBe(0);
+  });
+
+  it('shows the confirmation code only through the application', async () => {
+    const project = await freshCostedProject('Code');
+    const turn = await runConversationTurn(project, ownerId, 'dir lia quote l client Cafe Andalous');
+    const reply = turn.assistantMessage.content;
+
+    // The application appends exactly one confirmation line; the model is
+    // never given the code, so it cannot have written one of its own.
+    expect(reply.match(/reply with only this code: \d{6}\./g) ?? [], reply).toHaveLength(1);
+    expect(await quoteCount(project)).toBe(0);
+  });
+
+  it('creates exactly one draft once the user sends the confirmation code', async () => {
+    const project = await freshCostedProject('Confirm');
+    const preview = await runConversationTurn(
+      project,
+      ownerId,
+      'prepare a quotation for the client Cafe Andalous'
+    );
+    expect(await quoteCount(project)).toBe(0);
+    const code = confirmationCodeIn(preview.assistantMessage.content);
+
+    const turn = await runConversationTurn(project, ownerId, code);
+
+    expect((await createCalls(project)).some((call) => call.confirmed === true)).toBe(true);
+    expect(await quoteCount(project)).toBe(1);
+
+    const stored = await prisma.quote.findFirstOrThrow({ where: { projectId: project } });
+    expect(stored.status).toBe('draft');
+    expect(stored.clientName).toMatch(/Andalous/i);
+    // The number the reply reports is the one the application allocated.
+    expect(turn.assistantMessage.content, turn.assistantMessage.content).toContain(stored.number);
+  });
+
+  it('creates nothing when the user says yes in words instead of sending the code', async () => {
+    // Whatever the model makes of "iyeh" — the server reads the user's message.
+    const project = await freshCostedProject('Words');
+    await runConversationTurn(project, ownerId, 'dir lia quote l client Cafe Andalous');
+    await runConversationTurn(project, ownerId, 'iyeh, dirha. confirm.');
+
+    expect(await quoteCount(project)).toBe(0);
+  });
+
+  it('creates nothing when the user declines the preview', async () => {
+    const project = await freshCostedProject('Decline');
+    await runConversationTurn(project, ownerId, 'dir lia quote l client Cafe Andalous');
+    await runConversationTurn(project, ownerId, 'la, ma bghitch daba. ma tdir walu.');
+
+    expect(await quoteCount(project)).toBe(0);
+  });
+
+  it('asks who the quotation is for rather than inventing a client', async () => {
+    const project = await freshCostedProject('Incomplete');
+    const turn = await runConversationTurn(project, ownerId, 'dir lia quote');
+
+    expect((await createCalls(project)).some((call) => call.confirmed === true)).toBe(false);
+    expect(await quoteCount(project)).toBe(0);
+    // It has to ask for the missing client.
+    expect(turn.assistantMessage.content, turn.assistantMessage.content).toMatch(
+      /client|chkoun|l.?mn|pour qui|who/i
+    );
+  });
+
+  it('gives a role that may read quotes but not write them no way to create one', async () => {
+    const project = await freshCostedProject('Unauthorised');
+    const turn = await runConversationTurn(
+      project,
+      productionId,
+      'dir lia quote l client Cafe Andalous daba'
+    );
+
+    expect(await createCalls(project)).toEqual([]);
+    expect(await quoteCount(project)).toBe(0);
+
+    // And no internal figure reaches them on the way to saying no.
+    const cost = await getProjectCost(project, ownerId);
+    const internal = cost.cost!.internalTotalCents;
+    expect(digits(turn.assistantMessage.content), turn.assistantMessage.content).not.toContain(
+      digits(internal)
+    );
+  });
+
+  it('keeps the internal cost out of the preview it shows', async () => {
+    const project = await freshCostedProject('Hidden');
+    const turn = await runConversationTurn(project, ownerId, 'dir lia quote l client Cafe Andalous');
+
+    const cost = await getProjectCost(project, ownerId);
+    // The model's own words: the application's confirmation line carries a
+    // six-digit code, which `digits` would otherwise run into the figures.
+    const reply = withoutConfirmationLine(turn.assistantMessage.content);
+    // A quotation is the client price. The business's own cost before margin,
+    // and the margin itself, are not part of confirming one.
+    expect(digits(reply), reply).not.toContain(digits(cost.cost!.internalTotalCents));
+    expect(digits(reply), reply).not.toContain(digits(cost.cost!.marginCents));
+    expect(await quoteCount(project)).toBe(0);
+  });
 });

@@ -172,3 +172,41 @@ const MATERIAL_QUERY_JSON_SCHEMA = {
 } as const;
 
 export { MATERIAL_QUERY_JSON_SCHEMA };
+
+/**
+ * Creating a draft quotation (T22.3).
+ *
+ * Only the CLIENT and the wording are the model's to supply. The lines, prices,
+ * tax, total, currency, number and status are all decided by `createQuote` from
+ * the project's cost calculation, so none of them is a parameter — the model has
+ * no way to state a price even if it wanted to.
+ *
+ * Mirrors `createQuoteSchema` in `src/lib/quotes/schema.ts`, which re-validates
+ * every call. `confirmed` is the one field that schema does not have.
+ */
+const CREATE_QUOTE_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['clientName', 'confirmed'],
+  properties: {
+    clientName: {
+      type: 'string',
+      description: 'The client the quotation is addressed to, exactly as the user gave it. Never invented.',
+    },
+    clientAddress: { type: ['string', 'null'] },
+    clientPhone: { type: ['string', 'null'] },
+    clientEmail: { type: ['string', 'null'] },
+    title: {
+      type: ['string', 'null'],
+      description: 'A heading for the quotation. Omit it to use the project title.',
+    },
+    description: { type: ['string', 'null'] },
+    confirmed: {
+      type: 'boolean',
+      description:
+        'false to PREVIEW: nothing is created, you show the user what would be, and the application shows them a confirmation code. true to CREATE — only when the user\'s reply is that code alone, and with exactly the same details. The application checks the code against the user\'s own message; a true call after any other reply, or without that preview in your previous turn, is refused.',
+    },
+  },
+} as const;
+
+export { CREATE_QUOTE_JSON_SCHEMA };

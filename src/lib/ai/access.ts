@@ -48,6 +48,8 @@ export type AiGrants = {
   viewCost: boolean;
   /** Client quotations. */
   viewQuotes: boolean;
+  /** Write a new draft quotation (T22.3). */
+  createQuotes: boolean;
   /** The shared material library. */
   manageMaterials: boolean;
   /** The workshop package. */
@@ -60,6 +62,7 @@ export function grantsFor(role: WorkspaceRole): AiGrants {
     editDesign: can(role, 'design.edit'),
     viewCost: can(role, 'cost.view'),
     viewQuotes: can(role, 'quote.view'),
+    createQuotes: can(role, 'quote.create'),
     manageMaterials: can(role, 'material.manage'),
     viewProduction: can(role, 'production.view'),
   };

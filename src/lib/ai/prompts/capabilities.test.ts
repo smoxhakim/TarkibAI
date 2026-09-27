@@ -92,13 +92,22 @@ describe('capability selection', () => {
       }
     });
 
-    it('stays out until a quotation actually exists', () => {
+    it('stays out until a quotation actually exists, for a role that cannot create one', () => {
       // Otherwise a production manager gets quote instructions on a project
-      // nobody has quoted.
-      expect(
-        selectCapabilities(snapshotFixture({ quotes: { count: 0, statuses: [] } }), grantsFor('sales'))
-      ).not.toContain('quotes');
-      expect(selectCapabilities(quoted, grantsFor('sales'))).toContain('quotes');
+      // nobody has quoted. Asserted with production since T22.3: it is the role
+      // that reads quotations without writing them, which is who this protects.
+      const unquoted = snapshotFixture({ quotes: { count: 0, statuses: [] } });
+      expect(selectCapabilities(unquoted, grantsFor('production'))).not.toContain('quotes');
+      expect(selectCapabilities(quoted, grantsFor('production'))).toContain('quotes');
+    });
+
+    it('is present on an unquoted project for a role that may create one (T22.3)', () => {
+      // A salesperson asked to quote a project nobody has quoted yet needs the
+      // creation instructions precisely then.
+      const unquoted = snapshotFixture({ quotes: { count: 0, statuses: [] } });
+      for (const role of ['owner', 'admin', 'sales'] as const) {
+        expect(selectCapabilities(unquoted, grantsFor(role)), role).toContain('quotes');
+      }
     });
 
     it('does not carry the cost module with it', () => {

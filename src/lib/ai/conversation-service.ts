@@ -13,7 +13,7 @@ import { buildSpecStateMessage, buildSystemPrompt } from './prompts/system';
 import { selectCapabilities } from './prompts/capabilities';
 import { buildProjectContext, renderProjectState } from './context/project-context';
 import { resolveProjectAiAccess } from './access';
-import { buildToolbox } from './tools';
+import { buildToolbox, type ToolTurn } from './tools';
 
 export type ChatMessageView = {
   id: string;
@@ -159,14 +159,20 @@ export async function runConversationTurn(
       : { role: 'user', content },
   ];
 
+  // The user's own words go to the toolbox as well as to the model: a confirmed
+  // write checks consent against THIS text, which the model cannot author.
+  const turn: ToolTurn = { userMessage: content, notices: [] };
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const result = await runAgent(client, messages, buildToolbox(access));
+  const result = await runAgent(client, messages, buildToolbox(access, turn));
 
-  const text =
+  const reply =
     result.text ||
     // The model returned tool calls but no prose. Better to say so than to
     // persist an empty bubble the user cannot interpret.
     'Ma9dertch njaweb daba. 3awd jarreb 3afak. (I could not produce a reply just now — please try again.)';
+  // Application-authored lines, such as a confirmation code, go after the
+  // model's text and are persisted with it, so the user reads them verbatim.
+  const text = [reply, ...turn.notices].join('\n\n');
 
   // Persisted only after the agent succeeds, so a failed turn does not leave the
   // user's message stranded in a conversation that was never answered.

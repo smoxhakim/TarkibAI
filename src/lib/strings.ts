@@ -83,6 +83,10 @@ export const strings = {
     loadFailed: 'Could not load the conversation.',
     you: 'You',
     assistant: 'TARKIB',
+    // Appended by the application, never written by the model: the one place
+    // that says what the confirmation code does (T22.3).
+    quoteConfirmation:
+      'Nothing has been created yet. To create a DRAFT quotation for "{client}", titled "{title}" (not sent to anyone; it takes the next quote number), reply with only this code: {code}. Any other reply creates nothing.',
   },
   materials: {
     title: 'Materials',
